@@ -11,9 +11,9 @@ from torch.utils.data import DataLoader
 from torchvision import transforms, datasets
 from torch.utils.data.sampler import SubsetRandomSampler
 
-from .randaugment import RandAugmentPolicy
-from .simclr_augment import get_simclr_ops
-from .utils import helpers
+from pycls.datasets.randaugment import RandAugmentPolicy
+from pycls.datasets.simclr_augment import get_simclr_ops
+from pycls.datasets.utils import helpers
 import pycls.utils.logging as lu
 from pycls.datasets.sampler import IndexedSequentialSampler
 from pycls.datasets.tiny_imagenet import TinyImageNet

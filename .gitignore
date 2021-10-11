@@ -29,7 +29,6 @@ pycls/datasets/data/
 logs/
 scratch*
 
-**/data/
 **/output/
 **/results/
 **/results_old/
