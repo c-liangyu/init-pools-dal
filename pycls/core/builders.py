@@ -61,8 +61,8 @@ def build_model(cfg):
         model = get_model(cfg)(num_classes=cfg.MODEL.NUM_CLASSES, use_dropout=True)
     else:
         model = get_model(cfg)(num_classes=cfg.MODEL.NUM_CLASSES)
-    if cfg.DATASET.NAME == 'MNIST':
-        model.conv1 =  torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+    if cfg.DATASET.NAME in ['MNIST', 'MNIST_REVERSE']:
+        model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
     
     return model 
 

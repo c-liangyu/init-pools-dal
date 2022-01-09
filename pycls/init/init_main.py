@@ -30,8 +30,8 @@ class InitialPool:
 
         budgetSize = int((self.cfg.INIT_POOL.INIT_RATIO)*len(dataset))
 
-        if self.cfg.INIT_POOL.SAMPLING_FN in ['simclr', 'vae']:
-            initSet, uSet = SelfSupervisionSampling(dataset=dataset, budgetSize=budgetSize, 
+        if self.cfg.INIT_POOL.SAMPLING_FN in ['simclr', 'vae', 'determined']:
+            initSet, uSet = SelfSupervisionSampling(cfg=self.cfg, dataset=dataset, budgetSize=budgetSize,
                 sampling_fn=self.cfg.INIT_POOL.SAMPLING_FN, dataset_name=self.cfg.DATASET.NAME).sample()
         elif self.cfg.INIT_POOL.SAMPLING_FN in ['scan', 'kmeans']:
             initSet, uSet = ClusteringSampling(dataset=dataset, budgetSize=budgetSize,  

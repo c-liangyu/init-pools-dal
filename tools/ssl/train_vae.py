@@ -518,7 +518,7 @@ if __name__ == "__main__":
             'learning_rate': cfg.OPTIM.BASE_LR
         }
 
-        os.environ['WANDB_API_KEY'] = "befac31ac1ef7426a055ae8c138fb2b47930bd35"
+        os.environ['WANDB_API_KEY'] = "939a8c4f5511d703276d83a706fecda173003fae"
         # Login to wandb
         wandb.login()
 
@@ -537,7 +537,7 @@ if __name__ == "__main__":
 
         wandb.agent(sweep_id, main(cfg))
     else:
-        os.environ['WANDB_API_KEY'] = "befac31ac1ef7426a055ae8c138fb2b47930bd35"
+        os.environ['WANDB_API_KEY'] = "939a8c4f5511d703276d83a706fecda173003fae"
         wandb.login()
         wandb.init(project="{}-vae-train".format(str.lower(cfg.DATASET.NAME)), name=cfg.EXP_NAME)
 

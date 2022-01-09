@@ -16,6 +16,8 @@ from PIL import Image
 FLAGS = argparse.ArgumentParser(description='Evaluate models from the model zoo')
 FLAGS.add_argument('--config_exp', help='Location of config file')
 FLAGS.add_argument('--model', help='Location where model is saved')
+FLAGS.add_argument('--select_prototypes', action='store_true',
+                    help='Select the prototpye for each cluster')
 FLAGS.add_argument('--visualize_prototypes', action='store_true', 
                     help='Show the prototpye for each cluster')
 args = FLAGS.parse_args()
@@ -86,8 +88,11 @@ def main():
         clustering_stats = hungarian_evaluate(head, predictions, dataset.classes, 
                                                 compute_confusion_matrix=True)
         print(clustering_stats)
+        prototype_indices = get_prototypes(config, predictions[head], features, model)
+
+        if args.select_prototypes:
+            pass
         if args.visualize_prototypes:
-            prototype_indices = get_prototypes(config, predictions[head], features, model)
             visualize_indices(prototype_indices, dataset, clustering_stats['hungarian_match'])
     else:
         raise NotImplementedError

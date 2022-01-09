@@ -45,7 +45,7 @@ optimizer_kwargs:
    weight_decay: 0.0001
 epochs: 50
 batch_size: 128
-num_workers: 8
+num_workers: 32
 
 # Scheduler
 scheduler: constant

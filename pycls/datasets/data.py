@@ -19,6 +19,9 @@ from pycls.datasets.imbalanced_cifar import IMBALANCECIFAR10, IMBALANCECIFAR100
 from pycls.datasets.sampler import IndexedSequentialSampler
 from pycls.datasets.tiny_imagenet import TinyImageNet
 
+import medmnist
+from medmnist import INFO, Evaluator
+
 logger = lu.get_logger(__name__)
 
 class Data:
@@ -85,16 +88,20 @@ class Data:
         OUTPUT:
         Returns a list of preprocessing steps. Note the order of operations matters in the list.
         """
-        if self.dataset in ["MNIST","SVHN","CIFAR10","CIFAR100","TINYIMAGENET", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100']:
+        if self.dataset in ["MNIST", "SVHN", "CIFAR10", "CIFAR100","TINYIMAGENET", 'IMBALANCED_CIFAR10',
+                            'IMBALANCED_CIFAR100', 'CIFAR10_REVERSE', 'MNIST_REVERSE',
+                            'PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                            'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                            ]:
             ops = []
             norm_mean = []
             norm_std = []
 
-            if self.dataset in ["CIFAR10", "CIFAR100", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100']:
+            if self.dataset in ["CIFAR10", "CIFAR100", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100', 'CIFAR10_REVERSE']:
                 ops = [transforms.RandomCrop(32, padding=4)]
                 norm_mean = [0.4914, 0.4822, 0.4465]
                 norm_std = [0.247 , 0.2435, 0.2616]
-            elif self.dataset == "MNIST":
+            elif self.dataset in ["MNIST", 'MNIST_REVERSE']:
                 ops = [transforms.RandomResizedCrop(32)] 
                 norm_mean = [0.1307,]
                 norm_std = [0.3081,]
@@ -107,6 +114,12 @@ class Data:
                 ops = [transforms.RandomCrop(32, padding=4)]
                 norm_mean = [0.4376, 0.4437, 0.4728]
                 norm_std = [0.1980, 0.2010, 0.1970]
+            elif self.dataset in ['PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                                  'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                                  ]:
+                ops = [transforms.RandomCrop(32, padding=4)]
+                norm_mean = [.5, .5, .5]
+                norm_std = [.5, .5, .5]
             else:
                 raise NotImplementedError
 
@@ -121,7 +134,10 @@ class Data:
             elif not self.eval_mode and (self.aug_method == 'hflip'):
                 ops.append(transforms.RandomHorizontalFlip())
 
-            ops.append(transforms.ToTensor())
+            if self.dataset not in ['PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                                  'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                                  ]:
+                ops.append(transforms.ToTensor())
             ops.append(transforms.Normalize(norm_mean, norm_std))
 
             if self.eval_mode:
@@ -154,7 +170,7 @@ class Data:
         (On Failure) Returns Message as <dataset> not specified.
         """
         if isTrain:
-                preprocess_steps = self.getPreprocessOps()
+            preprocess_steps = self.getPreprocessOps()
         else:
             self.eval_mode = True
             preprocess_steps = self.getPreprocessOps()
@@ -164,6 +180,14 @@ class Data:
         if self.dataset == "MNIST":
             mnist = datasets.MNIST(save_dir, train=isTrain, transform=preprocess_steps, download=isDownload)
             return mnist, len(mnist)
+
+        elif self.dataset == 'MNIST_REVERSE':
+            mnist = datasets.MNIST(save_dir, train=not isTrain, transform=preprocess_steps, download=isDownload)
+            return mnist, len(mnist)
+
+        elif self.dataset == "CIFAR10_REVERSE":
+            cifar10 = datasets.CIFAR10(save_dir, train=not isTrain, transform=preprocess_steps, download=isDownload)
+            return cifar10, len(cifar10)
 
         elif self.dataset == "CIFAR10":
             cifar10 = datasets.CIFAR10(save_dir, train=isTrain, transform=preprocess_steps, download=isDownload)
@@ -192,14 +216,55 @@ class Data:
         elif self.dataset == 'IMBALANCED_CIFAR10':
             im_cifar10 = IMBALANCECIFAR10(save_dir, train=isTrain, transform=preprocess_steps)
             return im_cifar10, len(im_cifar10)
-        elif self.dataset ==  'IMBALANCED_CIFAR100':
+        elif self.dataset == 'IMBALANCED_CIFAR100':
             im_cifar100 = IMBALANCECIFAR100(save_dir, train=isTrain, transform=preprocess_steps)
             return im_cifar100, len(im_cifar100)
+        elif self.dataset == 'PATHMNIST':
+            data_flag = 'pathmnist'
+            info = INFO[data_flag]
+            DataClass = getattr(medmnist, info['python_class'])
+            pathmnist = DataClass(split='train' if isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            pathmnist.labels = pathmnist.labels.squeeze()
+            return pathmnist, len(pathmnist)
+        elif self.dataset == 'PATHMNIST_REVERSE':
+            data_flag = 'pathmnist'
+            info = INFO[data_flag]
+            DataClass = getattr(medmnist, info['python_class'])
+            pathmnist = DataClass(split='train' if not isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            pathmnist.labels = pathmnist.labels.squeeze()
+            return pathmnist, len(pathmnist)
+        elif self.dataset == 'BLOODMNIST':
+            data_flag = 'bloodmnist'
+            info = INFO[data_flag]
+            DataClass = getattr(medmnist, info['python_class'])
+            bloodmnist = DataClass(split='train' if isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            bloodmnist.labels = bloodmnist.labels.squeeze()
+            return bloodmnist, len(bloodmnist)
+        elif self.dataset == 'BLOODMNIST_REVERSE':
+            data_flag = 'bloodmnist'
+            info = INFO[data_flag]
+            DataClass = getattr(medmnist, info['python_class'])
+            bloodmnist = DataClass(split='train' if not isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            bloodmnist.labels = bloodmnist.labels.squeeze()
+            return bloodmnist, len(bloodmnist)
+        elif self.dataset == 'RETINAMNIST':
+            data_flag = 'retinamnist'
+            info = INFO[data_flag]
+            DataClass = getattr(medmnist, info['python_class'])
+            retinamnist = DataClass(split='train' if isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            retinamnist.labels = retinamnist.labels.squeeze()
+            return retinamnist, len(retinamnist)
+        elif self.dataset == 'RETINAMNIST_REVERSE':
+            data_flag = 'retinamnist'
+            info = INFO[data_flag]
+            DataClass = getattr(medmnist, info['python_class'])
+            retinamnist = DataClass(split='train' if not isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            retinamnist.labels = retinamnist.labels.squeeze()
+            return retinamnist, len(retinamnist)
         else:
             print("Either the specified {} dataset is not added or there is no if condition in getDataset function of Data class".format(self.dataset))
             logger.info("Either the specified {} dataset is not added or there is no if condition in getDataset function of Data class".format(self.dataset))
             raise NotImplementedError
-
 
     def makeLUVSets(self, train_split_ratio, val_split_ratio, data, seed_id, save_dir):
         """
@@ -225,13 +290,17 @@ class Data:
         (On Success) Sets the labelled, unlabelled set along with validation set
         (On Failure) Returns Message as <dataset> not specified.
         """
-        # Reproducibility stuff
+        # # Reproducibility stuff
         torch.manual_seed(seed_id)
         np.random.seed(seed_id)
 
         assert isinstance(train_split_ratio, float),"Train split ratio is of {} datatype instead of float".format(type(train_split_ratio))
         assert isinstance(val_split_ratio, float),"Val split ratio is of {} datatype instead of float".format(type(val_split_ratio))
-        assert self.dataset in ["MNIST","CIFAR10","CIFAR100", "SVHN", "TINYIMAGENET", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100'], "Sorry the dataset {} is not supported. Currently we support ['MNIST','CIFAR10', 'CIFAR100', 'SVHN', 'TINYIMAGENET']".format(self.dataset)
+        assert self.dataset in ["MNIST", "SVHN", "CIFAR10", "CIFAR100","TINYIMAGENET", 'IMBALANCED_CIFAR10',
+                            'IMBALANCED_CIFAR100', 'CIFAR10_REVERSE', 'MNIST_REVERSE',
+                            'PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                            'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                            ], "Sorry the dataset {} is not supported. Currently we support ['MNIST','CIFAR10', 'CIFAR100', 'SVHN', 'TINYIMAGENET']".format(self.dataset)
 
         lSet = []
         uSet = []
@@ -244,7 +313,7 @@ class Data:
         #To get the validation index from end we multiply n_datapoints with 1-val_ratio 
         val_splitIdx = int((1-val_split_ratio)*n_dataPoints)
         #Check there should be no overlap with train and val data
-        assert train_split_ratio + val_split_ratio < 1.0, "Validation data over laps with train data as last train index is {} and last val index is {}. \
+        assert train_split_ratio + val_split_ratio <= 1.0, "Validation data over laps with train data as last train index is {} and last val index is {}. \
             The program expects val index > train index. Please satisfy the constraint: train_split_ratio + val_split_ratio < 1.0; currently it is {} + {} is not < 1.0 => {} is not < 1.0"\
                 .format(train_splitIdx, val_splitIdx, train_split_ratio, val_split_ratio, train_split_ratio + val_split_ratio)
         
@@ -289,7 +358,11 @@ class Data:
         np.random.seed(seed_id)
 
         assert isinstance(val_split_ratio, float),"Val split ratio is of {} datatype instead of float".format(type(val_split_ratio))
-        assert self.dataset in ["MNIST","CIFAR10","CIFAR100", "SVHN", "TINYIMAGENET", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100'], "Sorry the dataset {} is not supported. Currently we support ['MNIST','CIFAR10', 'CIFAR100', 'SVHN', 'TINYIMAGENET']".format(self.dataset)
+        assert self.dataset in ["MNIST", "SVHN", "CIFAR10", "CIFAR100","TINYIMAGENET", 'IMBALANCED_CIFAR10',
+                            'IMBALANCED_CIFAR100', 'CIFAR10_REVERSE', 'MNIST_REVERSE',
+                            'PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                            'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                            ], "Sorry the dataset {} is not supported. Currently we support ['MNIST','CIFAR10', 'CIFAR100', 'SVHN', 'TINYIMAGENET']".format(self.dataset)
 
         trainSet = []
         valSet = []
@@ -339,7 +412,11 @@ class Data:
         np.random.seed(seed_id)
 
         assert isinstance(val_split_ratio, float),"Val split ratio is of {} datatype instead of float".format(type(val_split_ratio))
-        assert self.dataset in ["MNIST","CIFAR10","CIFAR100", "SVHN", "TINYIMAGENET", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100'], "Sorry the dataset {} is not supported. Currently we support ['MNIST','CIFAR10', 'CIFAR100', 'SVHN', 'TINYIMAGENET']".format(self.dataset)
+        assert self.dataset in ["MNIST", "SVHN", "CIFAR10", "CIFAR100","TINYIMAGENET", 'IMBALANCED_CIFAR10',
+                            'IMBALANCED_CIFAR100', 'CIFAR10_REVERSE', 'MNIST_REVERSE',
+                            'PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                            'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                            ], "Sorry the dataset {} is not supported. Currently we support ['MNIST','CIFAR10', 'CIFAR100', 'SVHN', 'TINYIMAGENET']".format(self.dataset)
 
         uSet = []
         valSet = []
@@ -448,7 +525,11 @@ class Data:
         torch.manual_seed(seed_id)
         np.random.seed(seed_id)
 
-        if self.dataset in ["MNIST","CIFAR10","CIFAR100", "TINYIMAGENET", 'IMBALANCED_CIFAR10', 'IMBALANCED_CIFAR100']:
+        if self.dataset in ["MNIST", "SVHN", "CIFAR10", "CIFAR100","TINYIMAGENET", 'IMBALANCED_CIFAR10',
+                            'IMBALANCED_CIFAR100', 'CIFAR10_REVERSE', 'MNIST_REVERSE',
+                            'PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+                            'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+                            ]:
             n_datapts = len(data)
             idx = [i for i in range(n_datapts)]
             #np.random.shuffle(idx)

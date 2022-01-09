@@ -36,31 +36,65 @@ class SelfSupervisionSampling:
     Loads SimCLR and VAE losses. Generates the initial pool accordingly. 
     """
 
-    def __init__(self, dataset, budgetSize, sampling_fn, dataset_name):
+    def __init__(self, cfg, dataset, budgetSize, sampling_fn, dataset_name):
         fullSet = np.array([i for i in range(len(dataset))],dtype=np.ndarray)
 
         output_dir = '../results/'
         if dataset_name == 'CIFAR10':
             output_dir += 'cifar-10/'
+            num_clusters = 10
         elif dataset_name == 'CIFAR100':
             output_dir += 'cifar-100/'
+            num_clusters = 19
         elif dataset_name == 'MNIST':
             output_dir += 'mnist/'
+            num_clusters = 10
         elif dataset_name == 'TINYIMAGENET':
             output_dir += 'tinyimagenet/'
+            num_clusters = 200
         elif dataset_name == 'IMBALANCED_CIFAR10':
             output_dir += 'imbalanced-cifar-10/'
-        
+            num_clusters = 10
+
         if sampling_fn == "simclr":
-            file_path = f'{output_dir}/{dataset_name}_SimCLR_losses.npy'
+            # file_path = f'{output_dir}/{dataset_name}_SimCLR_losses_{cfg.INIT_POOL.SIMCLR_DUPLICATE}.npy'
+            # file_path = f'{output_dir}/{cfg.INIT_POOL.SIMCLR_DUPLICATE}'
+            file_path = f'{cfg.INIT_POOL.SIMCLR_DUPLICATE}'
         elif sampling_fn == "vae":
             file_path = f'{output_dir}/{dataset_name}_VAE_losses.npy'
-        
-        losses = np.load(file_path)
-        sorted_idx = np.argsort(losses)[::-1]
-        initSet = sorted_idx[:budgetSize]
-        self.initSet = fullSet[initSet]
-        self.remainSet = fullSet[sorted_idx[budgetSize:]]
+
+        if sampling_fn == 'determined':
+            file_path = f'{cfg.INIT_POOL.SIMCLR_DUPLICATE}'
+            initSet = np.load(file_path)
+            self.initSet = fullSet[initSet]
+            self.remainSet = np.delete(fullSet, initSet)
+        # Sample with class balance
+        elif cfg.INIT_POOL.CLUSTER_ID is not None:
+            cluster_ids = np.load(f'{output_dir}/{cfg.INIT_POOL.CLUSTER_ID}')
+            losses = np.load(file_path)
+            sorted_idx = np.argsort(losses)[::-1]
+            cluster_ids = cluster_ids[sorted_idx]
+            # Equal budget assigned to all classes
+            cluster_budgets = [int(budgetSize / num_clusters) for x in range(num_clusters)]
+            groups = []
+            if dataset_name == 'CIFAR100':
+                num_clusters += 1
+            for cluster_id in range(num_clusters):
+                if cluster_id == 1 and dataset_name == 'CIFAR100':
+                    continue
+                groups.append(np.array([idx for idx, x in enumerate(cluster_ids) if x == cluster_id]))
+            self.initSet = []
+            self.remainSet = []
+            # Filter from full buckets
+            for idx, g in enumerate(groups):
+                self.initSet.extend(sorted_idx[g[:cluster_budgets[idx]]])
+                self.remainSet.extend(sorted_idx[g[cluster_budgets[idx]:]])
+        else:
+            losses = np.load(file_path)
+            sorted_idx = np.argsort(losses)[::-1]
+            initSet = sorted_idx[:budgetSize]
+            self.initSet = fullSet[initSet]
+            self.remainSet = fullSet[sorted_idx[budgetSize:]]
 
 
     def sample(self):

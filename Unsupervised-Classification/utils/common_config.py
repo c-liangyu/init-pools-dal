@@ -54,7 +54,7 @@ def get_model(p, pretrain_path=None):
         elif 'imagenet' in p['train_db_name']:
             from models.resnet_tinyimnet import resnet18
             backbone = resnet18()
-        elif  p['train_db_name'] == 'mnist':
+        elif  p['train_db_name'] in ['mnist', 'mnist-reverse']:
             from models.resnet_mnist import resnet18
             backbone = resnet18()
             backbone['backbone'].conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)

@@ -39,6 +39,7 @@ def main():
     print('Model is {}'.format(model.__class__.__name__))
     print('Model parameters: {:.2f}M'.format(sum(p.numel() for p in model.parameters()) / 1e6))
     print(model)
+    model = torch.nn.DataParallel(model)
     model = model.cuda()
    
     # CUDNN
@@ -87,7 +88,7 @@ def main():
         print(colored('Restart from checkpoint {}'.format(p['pretext_checkpoint']), 'blue'))
         checkpoint = torch.load(p['pretext_checkpoint'], map_location='cpu')
         optimizer.load_state_dict(checkpoint['optimizer'])
-        model.load_state_dict(checkpoint['model'])
+        model.module.load_state_dict(checkpoint['model'])
         model.cuda()
         start_epoch = checkpoint['epoch']
 
@@ -121,7 +122,7 @@ def main():
         
         # Checkpoint
         print('Checkpoint ...')
-        torch.save({'optimizer': optimizer.state_dict(), 'model': model.state_dict(), 
+        torch.save({'optimizer': optimizer.state_dict(), 'model': model.module.state_dict(),
                     'epoch': epoch + 1}, p['pretext_checkpoint'])
         
         if epoch in [50, 75]:
@@ -152,7 +153,7 @@ def main():
 
 
     # Save final model
-    torch.save(model.state_dict(), p['pretext_model'])
+    torch.save(model.module.state_dict(), p['pretext_model'])
 
     # Mine the topk nearest neighbors at the very end (Train) 
     # These will be served as input to the SCAN loss.

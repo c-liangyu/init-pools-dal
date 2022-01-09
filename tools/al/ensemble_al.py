@@ -605,7 +605,7 @@ if __name__ == "__main__":
 
         wandb.agent(sweep_id, main(cfg))
     else:
-        os.environ['WANDB_API_KEY'] = "befac31ac1ef7426a055ae8c138fb2b47930bd35"
+        os.environ['WANDB_API_KEY'] = "939a8c4f5511d703276d83a706fecda173003fae"
         wandb.login()
         wandb.init(project="{}-init-main".format(str.lower(cfg.DATASET.NAME)), name=cfg.EXP_NAME)
     main(cfg)

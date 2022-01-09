@@ -1,5 +1,6 @@
 import os
 import sys
+import random
 from datetime import datetime
 import argparse
 import numpy as np
@@ -47,6 +48,10 @@ def argparser():
     parser.add_argument('--cfg', dest='cfg_file', help='Config file', required=True, type=str)
     parser.add_argument('--exp-name', dest='exp_name', help='Experiment Name', required=True, type=str)
     parser.add_argument('--init', dest='init', help='Init Pool Function', required=True, type=str)
+    parser.add_argument('--simclr-duplicate', dest='simclr_duplicate', help='Augmentation duplicates for SimCLR losses',
+                        required=False, type=str)
+    parser.add_argument('--cluster-id', dest='cluster_id', help='Pseudo labels',
+                        required=False, type=str)
     parser.add_argument('--al', dest='al', help='AL Method', required=True, type=str)
 
     return parser
@@ -177,7 +182,10 @@ def main(cfg):
     uSet_loader = data_obj.getIndexesDataLoader(indexes=uSet, batch_size=cfg.TRAIN.BATCH_SIZE, data=train_data)
     test_loader = data_obj.getTestLoader(data=test_data, test_batch_size=cfg.TRAIN.BATCH_SIZE, seed_id=cfg.RNG_SEED)
 
-    
+    # Fix seed for model initialization and training
+    set_random_seed(0, deterministic=True)
+    # set_random_seed(cfg.RNG_SEED, deterministic=True)
+
     print(len(lSet_loader)*cfg.TRAIN.BATCH_SIZE)
     print(len(valSet_loader)*cfg.TRAIN.BATCH_SIZE)
     print(len(uSet_loader)*cfg.TRAIN.BATCH_SIZE)
@@ -537,11 +545,34 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     return misclassifications/totalSamples
 
 
+def set_random_seed(seed, deterministic=False):
+    """Set random seed.
+    Args:
+        seed (int): Seed to be used.
+        deterministic (bool): Whether to set the deterministic option for
+            CUDNN backend, i.e., set `torch.backends.cudnn.deterministic`
+            to True and `torch.backends.cudnn.benchmark` to False.
+            Default: False.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    if deterministic:
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+
 if __name__ == "__main__":
     cfg.merge_from_file(argparser().parse_args().cfg_file)
     cfg.EXP_NAME = argparser().parse_args().exp_name
     cfg.INIT_POOL.SAMPLING_FN = argparser().parse_args().init
+    cfg.INIT_POOL.SIMCLR_DUPLICATE = argparser().parse_args().simclr_duplicate
+    cfg.INIT_POOL.CLUSTER_ID = argparser().parse_args().cluster_id
     cfg.ACTIVE_LEARNING.SAMPLING_FN = argparser().parse_args().al
+    # cfg.RNG_SEED = np.random.randint(100000)
+    cfg.RNG_SEED = random.randint(0, 100000)
+    print('##### random seed:', cfg.RNG_SEED)
     
     if cfg.SWEEP:
         # W&B Sweep config
@@ -584,7 +615,7 @@ if __name__ == "__main__":
 
         wandb.agent(sweep_id, main(cfg))
     else:
-        os.environ['WANDB_API_KEY'] = "befac31ac1ef7426a055ae8c138fb2b47930bd35"
+        os.environ['WANDB_API_KEY'] = "939a8c4f5511d703276d83a706fecda173003fae"
         wandb.login()
         wandb.init(project="{}-init-main".format(str.lower(cfg.DATASET.NAME)), name=cfg.EXP_NAME)
 
