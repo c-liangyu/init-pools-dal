@@ -128,6 +128,7 @@ def entropy(cfg, dataObj, model, dataset):
     print(f"u_ranks.shape: {u_ranks.shape}")
     # we add -1 for reversing the sorted array
     sorted_idx = np.argsort(u_ranks)[::-1]  # argsort helps to return the indices of u_ranks such that their corresponding values are sorted.
+    np.save(os.path.join(df_save_dir, dataset.__class__.__name__, 'uncertainty_sorted_idx.npy'), sorted_idx)
     return u_ranks
 
 
@@ -166,7 +167,9 @@ def consistency(cfg, dataObj, model, dataset):
     else:
         duplicate_pred = np.load(os.path.join(df_save_dir, dataset.__class__.__name__, 'consistency.npy'))
 
-    var = np.var(duplicate_pred, axis=0)
+    var = np.var(duplicate_pred, axis=0).sum(axis=1)
+    sorted_idx = np.argsort(var)[::-1]  # argsort helps to return the indices of u_ranks such that their corresponding values are sorted.
+    np.save(os.path.join(df_save_dir, dataset.__class__.__name__, 'consistency_sorted_idx.npy'), sorted_idx)
     return var
 
 
@@ -212,6 +215,7 @@ def margin(cfg, dataObj, model, dataset):
     print(f"u_ranks.shape: {u_ranks.shape}")
     # we add -1 for reversing the sorted array
     sorted_idx = np.argsort(u_ranks)[::-1] # argsort helps to return the indices of u_ranks such that their corresponding values are sorted.
+    np.save(os.path.join(df_save_dir, dataset.__class__.__name__, 'magrin_sorted_idx.npy'), sorted_idx)
     return u_ranks
 
 
@@ -251,6 +255,8 @@ def vaal(cfg, dataObj, model, dataset):
         np.save(os.path.join(df_save_dir, dataset.__class__.__name__, 'vaal_score.npy'), score)
     else:
         score = np.load(os.path.join(df_save_dir, dataset.__class__.__name__, 'vaal_score.npy'))
+    sorted_idx = np.argsort(score)[::-1]  # argsort helps to return the indices of u_ranks such that their corresponding values are sorted.
+    np.save(os.path.join(df_save_dir, dataset.__class__.__name__, 'vaal_sorted_idx.npy'), sorted_idx)
     return score
 
 
@@ -408,8 +414,8 @@ if __name__ == '__main__':
     # al = 'coreset'
     # al = 'margin'
     # al = 'bald'
-    # al = 'consistency'
-    al = 'vaal'
+    al = 'consistency'
+    # al = 'vaal'
 
     # Create df
     if os.path.isfile(os.path.join(df_save_dir, dataset+'.pkl')):
@@ -432,7 +438,14 @@ if __name__ == '__main__':
         transforms.ToTensor(),
         transforms.Normalize(std=std, mean=mean),
     ])
-    train_data.transform = test_data.transform
+    if al is 'consistency':
+        train_data.transform = transforms.Compose([
+            transforms.RandomCrop(size=[32, 32], padding=4),
+            transforms.ToTensor(),
+            transforms.Normalize(std=std, mean=mean),
+        ])
+    else:
+        train_data.transform = test_data.transform
 
     if al is 'coreset':
         features = coreset(cfg, data_obj, model, test_data)
