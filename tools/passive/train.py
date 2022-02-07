@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 import argparse
 import numpy as np
-
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -342,12 +342,20 @@ def train_epoch(train_loader, model, loss_fun, optimizer, train_meter, cur_epoch
     train_meter.iter_tic() #This basically notes the start time in timer class defined in utils/timer.py
 
     len_train_loader = len(train_loader)
-    for cur_iter, (inputs, labels) in enumerate(train_loader):
+
+    guid, logits, gold = [], [], []
+
+    for cur_iter, (index, inputs, labels) in enumerate(train_loader):
         #ensuring that inputs are floatTensor as model weights are
         inputs = inputs.type(torch.cuda.FloatTensor)
         inputs, labels = inputs.cuda(), labels.cuda(non_blocking=True)
         # Perform the forward pass
         preds = model(inputs)
+
+        guid.append(index)
+        logits.append(preds)
+        gold.append(labels)
+
         # Compute the loss
         loss = loss_fun(preds, labels)
         # Perform the backward pass
@@ -389,6 +397,15 @@ def train_epoch(train_loader, model, loss_fun, optimizer, train_meter, cur_epoch
     # Log epoch stats
     train_meter.log_epoch_stats(cur_epoch)
     train_meter.reset()
+
+    guid = torch.cat(guid).detach().cpu().numpy()
+    logits = torch.cat(logits).detach().cpu().numpy()
+    gold = torch.cat(gold).detach().cpu().numpy()
+    log_training_dynamics(output_dir=cfg.EXP_DIR,
+                          epoch=cur_epoch,
+                          ids=guid,
+                          logits=logits.tolist(),
+                          golds=gold)
     return loss, clf_iter_count
 
 
@@ -412,7 +429,7 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     misclassifications = 0.
     totalSamples = 0.
 
-    for cur_iter, (inputs, labels) in enumerate(test_loader):
+    for cur_iter, (index, inputs, labels) in enumerate(test_loader):
         with torch.no_grad():
             # Transfer the data to the current GPU device
             inputs, labels = inputs.cuda(), labels.cuda(non_blocking=True)
@@ -444,6 +461,27 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
 
     return misclassifications/totalSamples
 
+
+def log_training_dynamics(output_dir,
+                          epoch,
+                          ids,
+                          logits,
+                          golds,
+                          split='training'):
+    """
+    Save training dynamics (logits) from given epoch as records of a `.jsonl` file.
+    """
+    td_df = pd.DataFrame({"guid": ids,
+                          f"logits_epoch_{epoch}": logits,
+                          "gold": golds})
+
+    logging_dir = os.path.join(output_dir, f"{split}_dynamics")
+    # Create directory for logging training dynamics, if it doesn't already exist.
+    if not os.path.exists(logging_dir):
+        os.makedirs(logging_dir)
+    epoch_file_name = os.path.join(logging_dir, f"dynamics_epoch_{epoch}.jsonl")
+    td_df.to_json(epoch_file_name, lines=True, orient="records")
+    logger.info(f"{split.capitalize()} dynamics logged to {epoch_file_name}")
 
 if __name__ == "__main__":
     cfg.merge_from_file(argparser().parse_args().cfg_file)

@@ -15,14 +15,29 @@ from .randaugment import RandAugmentPolicy
 from .simclr_augment import get_simclr_ops
 from .utils import helpers
 import pycls.utils.logging as lu
+from pycls.datasets.cifar10 import Cifar10
 from pycls.datasets.imbalanced_cifar import IMBALANCECIFAR10, IMBALANCECIFAR100
 from pycls.datasets.sampler import IndexedSequentialSampler
 from pycls.datasets.tiny_imagenet import TinyImageNet
 
 import medmnist
-from medmnist import INFO, Evaluator
+from medmnist import INFO, Evaluator, PathMNIST
+
 
 logger = lu.get_logger(__name__)
+
+
+class CIFAR10(datasets.CIFAR10):
+    def __getitem__(self, index):
+        img, target  = super().__getitem__(index)
+        return index, img, target
+
+
+class PathMNIST(PathMNIST):
+    def __getitem__(self, index):
+        img, target  = super().__getitem__(index)
+        return index, img, target
+
 
 class Data:
     """
@@ -134,10 +149,11 @@ class Data:
             elif not self.eval_mode and (self.aug_method == 'hflip'):
                 ops.append(transforms.RandomHorizontalFlip())
 
-            if self.dataset not in ['PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
-                                  'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
-                                  ]:
-                ops.append(transforms.ToTensor())
+            # if self.dataset not in ['PATHMNIST', 'BLOODMNIST', 'RETINAMNIST',
+            #                       'PATHMNIST_REVERSE', 'BLOODMNIST_REVERSE', 'RETINAMNIST_REVERSE',
+            #                       ]:
+            #     ops.append(transforms.ToTensor())
+            ops.append(transforms.ToTensor())
             ops.append(transforms.Normalize(norm_mean, norm_std))
 
             if self.eval_mode:
@@ -186,11 +202,11 @@ class Data:
             return mnist, len(mnist)
 
         elif self.dataset == "CIFAR10_REVERSE":
-            cifar10 = datasets.CIFAR10(save_dir, train=not isTrain, transform=preprocess_steps, download=isDownload)
+            cifar10 = CIFAR10(save_dir, train=not isTrain, transform=preprocess_steps, download=isDownload)
             return cifar10, len(cifar10)
 
         elif self.dataset == "CIFAR10":
-            cifar10 = datasets.CIFAR10(save_dir, train=isTrain, transform=preprocess_steps, download=isDownload)
+            cifar10 = CIFAR10(save_dir, train=isTrain, transform=preprocess_steps, download=isDownload)
             return cifar10, len(cifar10)
 
         elif self.dataset == "CIFAR100":
@@ -220,10 +236,7 @@ class Data:
             im_cifar100 = IMBALANCECIFAR100(save_dir, train=isTrain, transform=preprocess_steps)
             return im_cifar100, len(im_cifar100)
         elif self.dataset == 'PATHMNIST':
-            data_flag = 'pathmnist'
-            info = INFO[data_flag]
-            DataClass = getattr(medmnist, info['python_class'])
-            pathmnist = DataClass(split='train' if isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            pathmnist = PathMNIST(split='train' if isTrain else 'test', transform=preprocess_steps, download=isDownload)
             pathmnist.labels = pathmnist.labels.squeeze()
             return pathmnist, len(pathmnist)
         elif self.dataset == 'PATHMNIST_REVERSE':
