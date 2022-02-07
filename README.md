@@ -5,15 +5,24 @@
    
 1.1 Unsupervised-Classification/requirements.txt
 
-   1.2 pip install pytorch torchvision seaborn pandarallel plotly
+1.2 pip install pytorch torchvision seaborn pandarallel plotly
+
 2. Find ’tools/cold_bench_correlation_analysis.py‘
+
 3. Specify plot_save_dir as arbitrary path to save plot results in line #391
-4. Specify df_save_dir and copy all the content in the folder ‘df to the path specified
+
+4. Specify df_save_dir and copy all the content in the folder [df](https://drive.google.com/drive/u/1/folders/1QSxpVhyn0-OrAUqP4M_lLpTn_ECHgaql) to the path specified
+
 5. Specify DATA_DIR as the paths of saved logs, for all datasets
+
 6. Specify Active learning selection strategy  in line #407
+
 7. Run the file 
+
 ‘python tools/cold_bench_correlation_analysis.py --cfg ../configs/pathmnist/al/RESNET18_REVERSE_ONLY.yaml’
+
 ‘python tools/cold_bench_correlation_analysis.py --cfg ../configs/cifar10/al/RESNET18_REVERSE_ONLY.yaml’
+
 Sorted index numpy files are ‘*_sorted_idx.npy’, e.g. ‘consistency_sorted_idx.npy’ in ‘df/CIFAR10’, is the full list of CIFAR10 data points ranked by consistency score.
    
 8. This repo contains the code for 2D scatter plot, class histogram plot.
