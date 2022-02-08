@@ -32,13 +32,14 @@ def argparser():
     return parser
 
 
-def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.01, title=None, ylim=(None, 200)):
+def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.01, title=None, ylim=(None, None)):
     classes, counts = np.unique(labels, return_counts=True)
     df_rel = pd.DataFrame(columns=['classes', 'counts'])
     df_rel['classes'], df_rel['counts'] = classes, counts
     figsize = [5, 5]
+    plt.figure()
     plt.rcParams["figure.figsize"] = figsize
-    plt.rcParams["figure.autolayout"] = True
+    # plt.rcParams["figure.autolayout"] = True
     df_rel.plot(x='classes', y='counts', kind='bar', stacked=True,
                 title=title,
                 legend=None,
@@ -48,7 +49,9 @@ def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.0
                 width=0.9
                 )
     plt.ylim(ylim)
+    plt.savefig(os.path.join(plot_save_dir, dataset, acquisition + '_' + str(ratio) + '_distribution_histogram.png'))
     plt.show()
+    plt.clf()
 
 
 def read_dir_by_acquisition(path):
@@ -665,7 +668,7 @@ if __name__ == '__main__':
 
                 df['local_score'] = df['indices'].apply(calculate_local_score) / len(df['indices'])
 
-        calculate_difficulty = False
+        calculate_difficulty = True
         if calculate_difficulty:
             # df = df[df['ratio'] <= 0.05]  # for hard count correlation analysis
             train_dy_metrics = pd.read_json(
@@ -692,46 +695,46 @@ if __name__ == '__main__':
                 label_list = []
                 for index in indice_list:
                     try:
-                        confidence, correctness, variability = train_dy_metrics.loc[index]['confidence'], \
-                                                               train_dy_metrics.loc[index]['corr_frac'], \
-                                                               train_dy_metrics.loc[index]['variability']
-                        variability = train_dy_metrics.loc[index]['variability']
-                        confidence = train_dy_metrics.loc[index]['confidence']
+                        # confidence, correctness, variability = train_dy_metrics.loc[index]['confidence'], \
+                        #                                        train_dy_metrics.loc[index]['corr_frac'], \
+                        #                                        train_dy_metrics.loc[index]['variability']
+                        # variability = train_dy_metrics.loc[index]['variability']
+                        # confidence = train_dy_metrics.loc[index]['confidence']
                         label = full_label_list[index]
                     except:
                         print('train_dy_metrics error', index)
-                    conf_list.append(confidence)
-                    corr_list.append(correctness)
-                    var_list.append(variability)
+                    # conf_list.append(confidence)
+                    # corr_list.append(correctness)
+                    # var_list.append(variability)
                     label_list.append(label)
                 # conf_list, corr_list = np.array(conf_list), np.array(corr_list)
 
-                bins = [0.0, 0.33, 0.67, 1.0]
-
-                conf_count = np.histogram(conf_list, bins)[0]
-                conf_count_easy.append(conf_count[2] / len(conf_list))
-                conf_count_medium.append(conf_count[1] / len(conf_list))
-                conf_count_hard.append(conf_count[0] / len(conf_list))
-                variability_score.append(sum(var_list) / len(var_list))
-                confidence_score.append(sum(conf_list) / len(conf_list))
-                conf_outer_list.append(conf_list)
-                corr_outer_list.append(corr_list)
+                # bins = [0.0, 0.33, 0.67, 1.0]
+                #
+                # conf_count = np.histogram(conf_list, bins)[0]
+                # conf_count_easy.append(conf_count[2] / len(conf_list))
+                # conf_count_medium.append(conf_count[1] / len(conf_list))
+                # conf_count_hard.append(conf_count[0] / len(conf_list))
+                # variability_score.append(sum(var_list) / len(var_list))
+                # confidence_score.append(sum(conf_list) / len(conf_list))
+                # conf_outer_list.append(conf_list)
+                # corr_outer_list.append(corr_list)
                 label_outer_list.append(label_list)
 
-            df['conf_count_easy'] = conf_count_easy
-            df['conf_count_medium'] = conf_count_medium
-            df['conf_count_hard'] = conf_count_hard
-            df['variability_score'] = variability_score
-            df['confidence_score'] = confidence_score
+            # df['conf_count_easy'] = conf_count_easy
+            # df['conf_count_medium'] = conf_count_medium
+            # df['conf_count_hard'] = conf_count_hard
+            # df['variability_score'] = variability_score
+            # df['confidence_score'] = confidence_score
             df['labels'] = label_outer_list
         df.to_pickle(os.path.join(df_save_dir, dataset + '_full_info.pkl'))
 
     # Plot class distribution
-    plot_distribution_histogram = False
+    plot_distribution_histogram = True
     if plot_distribution_histogram:
         index_to_class_dict = train_data.info['label']
         uniform_label = list(range(10)) * 100
-        plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict)
+        plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
         # ratio = 0.01  # small ratio
         ratio = 0.5  # large ratio
         random_label = df[(df['acquisition'] == 'random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][0]
@@ -745,8 +748,6 @@ if __name__ == '__main__':
             for indices_list in active_indices:
                 label_list.append([test_data[index][1] for index in indices_list])
             active_label = label_list
-            print(acquisition)
-            print(active_label[:5])
             plot_class_dist(active_label, index_to_class_dict=index_to_class_dict, acquisition=acquisition, ratio=ratio)
 
     # Correlation analysis
