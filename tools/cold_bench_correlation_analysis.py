@@ -37,9 +37,8 @@ def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.0
     df_rel = pd.DataFrame(columns=['classes', 'counts'])
     df_rel['classes'], df_rel['counts'] = classes, counts
     figsize = [5, 5]
-    plt.figure()
     plt.rcParams["figure.figsize"] = figsize
-    # plt.rcParams["figure.autolayout"] = True
+    plt.rcParams["figure.autolayout"] = True
     df_rel.plot(x='classes', y='counts', kind='bar', stacked=True,
                 title=title,
                 legend=None,
@@ -48,10 +47,10 @@ def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.0
                 xticks=None,
                 width=0.9
                 )
+    plt.gca().axes.get_xaxis().set_visible(False)
     plt.ylim(ylim)
     plt.savefig(os.path.join(plot_save_dir, dataset, acquisition + '_' + str(ratio) + '_distribution_histogram.png'))
     plt.show()
-    plt.clf()
 
 
 def read_dir_by_acquisition(path):
@@ -650,7 +649,8 @@ if __name__ == '__main__':
     # df = full_df[full_df['acquisition'] == 'random']
     df = full_df
 
-    if os.path.isfile(os.path.join(df_save_dir, dataset + '_full_info.pkl')):
+    rewrite_df = True
+    if os.path.isfile(os.path.join(df_save_dir, dataset + '_full_info.pkl')) and not rewrite_df:
         df = pd.read_pickle(os.path.join(df_save_dir, dataset + '_full_info.pkl'))
     else:
         calculate_score = True
@@ -688,7 +688,7 @@ if __name__ == '__main__':
 
             full_label_list = [test_data[i][1] for i in range(len(test_data))]
 
-            for indice_list in tqdm(df['indices']):
+            for indice_list in tqdm(df['indices'], desc="Adding Labels"):
                 conf_list = []
                 corr_list = []
                 var_list = []
@@ -730,12 +730,13 @@ if __name__ == '__main__':
         df.to_pickle(os.path.join(df_save_dir, dataset + '_full_info.pkl'))
 
     # Plot class distribution
-    plot_distribution_histogram = True
+    plot_distribution_histogram = False
     if plot_distribution_histogram:
         index_to_class_dict = train_data.info['label']
         uniform_label = list(range(10)) * 100
         plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
         # ratio = 0.01  # small ratio
+        # ratio = 0.20  # small ratio for vaal only
         ratio = 0.5  # large ratio
         random_label = df[(df['acquisition'] == 'random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][0]
         plot_class_dist(random_label, index_to_class_dict=index_to_class_dict, ratio=ratio)
@@ -758,7 +759,7 @@ if __name__ == '__main__':
     # for ratio in ratios:
     for ratio in ratios[::-1]:
         if al is 'coreset' and ratio > 0.005:  # limit calculation complexity
-            break
+            continue
         ratio_df = df[(df['ratio'] == ratio) &
                       (df['acquisition'] == 'random') &
                       (df['auc'].notna())]
@@ -857,7 +858,7 @@ if __name__ == '__main__':
             fig.tight_layout()
             Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
             plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '.png'))
-            plt.show()
+            # plt.show()
 
             # plot random correlation only
             fig = plt.figure(figsize=[11.33, 15.24])
@@ -879,7 +880,7 @@ if __name__ == '__main__':
             fig.tight_layout()
             Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
             plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '_random_only.png'))
-            plt.show()
+            # plt.show()
 
         # Correlation
         # sns.regplot(ratio_df['conf_count_hard']+ratio_df['conf_count_medium'], ratio_df['auc'], color='grey', label='random')
