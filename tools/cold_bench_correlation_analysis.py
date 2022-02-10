@@ -3,13 +3,13 @@ import glob
 import itertools
 import os
 import time
+import warnings
 from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import plotly.io as pio
 import scipy.stats
 import seaborn as sns
 import torch
@@ -26,17 +26,37 @@ from pycls.datasets.data import Data
 
 pandarallel.initialize()
 
+
 def argparser():
     parser = argparse.ArgumentParser(description='Active Learning Cold Start Benchmark')
     parser.add_argument('--cfg', dest='cfg_file', help='Config file', required=True, type=str)
     return parser
 
 
-def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.01, title=None, ylim=(None, None)):
+# Plot class distribution (have trouble)
+def plot_distribution_histogram(ratio=0.5):
+    index_to_class_dict = train_data.info['label']
+    uniform_label = list(range(10)) * 100
+    plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
+    random_label = df[(df['acquisition'] == 'Random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][0]
+    plot_class_dist(random_label, index_to_class_dict=index_to_class_dict, ratio=ratio)
+
+    for acquisition in ['uncertainty', 'coreset', 'margin', 'bald', 'consistency', 'vaal']:
+        active_indices = \
+            full_df[(full_df['acquisition'] == acquisition) & (full_df['ratio'] == ratio) & (full_df['trial'] == 1)][
+                'indices']
+        label_list = []
+        for indices_list in active_indices:
+            label_list.append([test_data[index][1] for index in indices_list])
+        active_label = label_list
+        plot_class_dist(active_label, index_to_class_dict=index_to_class_dict, acquisition=acquisition, ratio=ratio)
+
+
+def plot_class_dist(labels, index_to_class_dict, acquisition='Random', ratio=0.01, title=None, ylim=(None, None)):
     classes, counts = np.unique(labels, return_counts=True)
     df_rel = pd.DataFrame(columns=['classes', 'counts'])
     df_rel['classes'], df_rel['counts'] = classes, counts
-    figsize = [5, 5]
+    figsize = [10, 10]
     plt.rcParams["figure.figsize"] = figsize
     plt.rcParams["figure.autolayout"] = True
     df_rel.plot(x='classes', y='counts', kind='bar', stacked=True,
@@ -53,23 +73,27 @@ def plot_class_dist(labels, index_to_class_dict, acquisition='random', ratio=0.0
     plt.show()
 
 
-def read_dir_by_acquisition(path):
+def read_dir_by_acquisition(path, dataset='PathMNIST'):
     file_list = glob.glob(path + '*.out')
     file_info = {}
+    acquisition_dict = {
+        'uncertainty': 'Entropy',
+        'bald': 'BALD',
+        'consistency': 'Consistency',
+        'coreset': 'Coreset',
+        'margin': 'Margin',
+        'vaal': 'VAAL'
+    }
     for file in file_list:
         file_info[file] = {'trial': file.split('-')[1],
                            'ratio': file.split('-p')[-1].split('-')[0],
-                           'acquisition': file.split('-')[-1].split('.out')[0]
+                           'acquisition': acquisition_dict[file.split('-')[-1].split('.out')[0]],
                            }
-
-        # debug only
-        if file.split('-')[-1].split('.out')[0] == 'vaal':
-            print('vaal', file.split('-p')[-1].split('-')[0])
 
         f = open(file, "r")
         lines = f.readlines()
 
-        al_sorted_idx_file = os.path.join(df_save_dir, train_data.__class__.__name__,
+        al_sorted_idx_file = os.path.join(df_save_dir, dataset,
                                           file.split('-')[-1].split('.out')[0] + '_sorted_idx.npy')
         sorted_idx = np.load(al_sorted_idx_file)
         al_sorted_idx = sorted_idx[:int(len(sorted_idx) * float(file_info[file]['ratio']))]
@@ -89,7 +113,7 @@ def read_dir(path):
     for file in file_list:
         file_info[file] = {'trial': file.split('-')[1],
                            'ratio': file.split('-p')[-1].split('.out')[0],
-                           'acquisition': 'random'
+                           'acquisition': 'Random'
                            }
 
         f = open(file, "r")
@@ -124,26 +148,28 @@ def load_test_data(cfg, data_obj):
 
 
 def calculate_global_score(al, cfg, dataObj, model, dataset):
-    if al == 'uncertainty':
-        score = uncertainty(cfg, dataObj=dataObj, model=model, dataset=dataset)
-    elif al == 'coreset':
+    if al == 'Entropy':
+        score = entropy(cfg, dataObj=dataObj, model=model, dataset=dataset)
+    elif al == 'Coreset':
         raise NotImplementedError('Use coreset score calculation.')
-    elif al == 'margin':
+    elif al == 'Margin':
         score = margin(cfg, dataObj=dataObj, model=model, dataset=dataset)
-    elif al == 'bald':
+    elif al == 'BALD':
         score = bald(cfg, dataObj=dataObj, model=model, dataset=dataset)
-    elif al == 'consistency':
+    elif al == 'Consistency':
         score = consistency(cfg, dataObj=dataObj, model=model, dataset=dataset)
-    elif al == 'vaal':
+    elif al == 'VAAL':
         score = vaal(cfg, dataObj=dataObj, model=model, dataset=dataset)
+    else:
+        raise NotImplementedError(al)
     return score
 
 
-def uncertainty(cfg, dataObj, model, dataset):
+def entropy(cfg, dataObj, model, dataset, recalculate_idx=False):
     """
     Implements the uncertainty principle as a acquisition function.
     """
-    if gpu is True:
+    if recalculate_idx:
         num_classes = cfg.MODEL.NUM_CLASSES
         assert model.training == False, "Model expected in eval mode whereas currently it is in {}".format(
             model.training)
@@ -185,8 +211,8 @@ def uncertainty(cfg, dataObj, model, dataset):
     return u_ranks
 
 
-def consistency(cfg, dataObj, model, dataset):
-    if gpu is True:
+def consistency(cfg, dataObj, model, dataset, recalculate_idx=False):
+    if recalculate_idx:
         # config dataloaders
         assert model.training == False, "Model expected in eval mode whereas currently it is in {}".format(
             model.training)
@@ -229,11 +255,11 @@ def consistency(cfg, dataObj, model, dataset):
     return var
 
 
-def margin(cfg, dataObj, model, dataset):
+def margin(cfg, dataObj, model, dataset, recalculate_idx=False):
     """
     Implements the uncertainty principle as a acquisition function.
     """
-    if gpu is True:
+    if recalculate_idx:
         num_classes = cfg.MODEL.NUM_CLASSES
         assert model.training == False, "Model expected in eval mode whereas currently it is in {}".format(
             model.training)
@@ -277,8 +303,8 @@ def margin(cfg, dataObj, model, dataset):
     return u_ranks
 
 
-def vaal(cfg, dataObj, model, dataset):
-    if gpu is True:
+def vaal(cfg, dataObj, model, dataset, recalculate_idx=False):
+    if recalculate_idx:
         clf = model.cuda()
         lSetLoader = dataObj.getSequentialDataLoader(indexes=np.arange(len(train_data)),
                                                      batch_size=int(cfg.TRAIN.BATCH_SIZE),
@@ -347,8 +373,8 @@ def get_predictions(clf_model, dataObj, idx_set, dataset):
     return preds
 
 
-def bald(cfg, dataObj, model, dataset):
-    if gpu is True:
+def bald(cfg, dataObj, model, dataset, recalculate_idx=False):
+    if recalculate_idx:
         "Implements BALD acquisition function where we maximize information gain."
         clf_model = model
         clf_model.cuda()
@@ -410,8 +436,8 @@ def bald(cfg, dataObj, model, dataset):
     return U_X
 
 
-def coreset(cfg, dataObj, model, dataset):
-    if gpu is True:
+def coreset(cfg, dataObj, model, dataset, recalculate_idx=False):
+    if recalculate_idx:
         clf = model.cuda()
 
         uSetLoader = dataObj.getSequentialDataLoader(indexes=np.arange(len(dataset)),
@@ -558,41 +584,149 @@ def gpu_compute_dists(M1, M2):
     return dists
 
 
-if __name__ == '__main__':
-    cfg.merge_from_file(argparser().parse_args().cfg_file)
-    dataset = cfg.DATASET.NAME
+def plot_local_score_auc_random_plus_active(ratio_df, al, df, ratio, plot_save_dir, dataset,
+                                            fontsize=35,
+                                            markersize=150,
+                                            linewidth=4,
+                                            figsize=(18, 9),
+                                            show=False,
+                                            ):
+    plt.rcParams.update({'font.size': fontsize})
+    plt.rcParams['axes.linewidth'] = linewidth
+    plt.rcParams['axes.spines.right'] = False
+    plt.rcParams['axes.spines.top'] = False
+    fig = plt.figure(figsize=figsize)
 
-    # Define DATA_DIR: logs dir
-    # checkpoint_file: model checkpoint
-    # plot_save_dir: dir to save plots
-    # df_save_dir: dir to save df
-    plot_save_dir = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/plot/'
-    df_save_dir = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/df/'
-    if dataset == 'CIFAR10_REVERSE':
-        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_random_selection_wt_imagenet/logs/'
-        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_active_selection_wt_imagenet/logs/'
-        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/CIFAR10_REVERSE/resnet18/reverse_trial1/episode_0/vlBest_acc_78_model_epoch_0180.pyth'
-        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_78_model_epoch_0180.pyth')
-        mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
-    elif dataset == 'PATHMNIST_REVERSE':
-        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/pathmnist_random_selection_wt_imagenet/logs/'
-        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/pathmnist_active_selection_wt_imagenet/logs/'
-        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/PATHMNIST_REVERSE/resnet18/trial1/episode_0/vlBest_acc_94_model_epoch_0200.pyth'
-        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_94_model_epoch_0200.pyth')
-        mean, std = [.5, .5, .5], [.5, .5, .5]
+    # create scatter plot
+    active_ratio_df = df[(df['ratio'] == ratio) &
+                         (df['acquisition'] == al) &
+                         (df['auc'].notna())]
 
-    # gpu set to False: use calculated features and active learning method score
-    # gpu = True
-    gpu = False
+    corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
 
-    # Active learning selection strategy
-    al = 'uncertainty'
-    # al = 'coreset'
-    # al = 'margin'
-    # al = 'bald'
-    # al = 'consistency'
-    # al = 'vaal'
+    # Specify xlim
+    ax_xlim_low = ratio_df['local_score'].min() - 0.05 * (
+            ratio_df['local_score'].max() - ratio_df['local_score'].min())
+    ax_xlim_high = ratio_df['local_score'].max() + 0.05 * (
+            ratio_df['local_score'].max() - ratio_df['local_score'].min())
+    ax2_xlim_low = active_ratio_df['local_score'].min() - 0.01 * (
+            ratio_df['local_score'].max() - ratio_df['local_score'].min())
+    ax2_xlim_high = active_ratio_df['local_score'].max() + - 0.01 * (
+            ratio_df['local_score'].max() - ratio_df['local_score'].min())
 
+    # Specify ylim
+    random_low = 1 - (1 - ratio_df['auc'].mean()) * 3
+    active_low = 1 - (1 - active_ratio_df['auc'].min()) * 1.1
+    ax_ylim_high = 1.0
+    ax_ylim_low = min(random_low, active_low)
+    # ax2_ylim_low = 1 - (1 - ratio_df['auc'].mean()) * 3
+    # ax2_ylim_high = 1.0
+
+    ratio_df = pd.concat([ratio_df, active_ratio_df])
+
+    ax = fig.add_subplot(121)
+    sns.regplot(ratio_df['local_score'], ratio_df['auc'], color='grey', label='Random',
+                scatter_kws={'s': markersize}, line_kws={'linewidth': linewidth * 1.5})
+    ax.set_ylim(None, 1)
+    ax2 = fig.add_subplot(122, sharey=ax)
+    sns.scatterplot(active_ratio_df['local_score'], active_ratio_df['auc'], color='red', label=al,
+                    s=markersize)
+
+    ax.set_xlim(ax_xlim_low, ax_xlim_high)
+    ax2.set_xlim(ax2_xlim_low, ax2_xlim_high)
+    ax.set_ylim(ax_ylim_low, ax_ylim_high)
+    # ax2.set_ylim(ax2_ylim_low, ax2_ylim_high)
+
+    # To specify the number of ticks on both or any single axes
+    plt.locator_params(axis='y', nbins=4)
+    plt.locator_params(axis='x', nbins=4)
+    ax.locator_params(axis='x', nbins=4)
+
+    # hide the spines between ax and ax2
+    ax2.yaxis.tick_right()
+    ax.spines['right'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
+    # ax2.spines['right'].set_visible(False)
+    ax.yaxis.tick_left()
+    # hide xlabel
+    ax.set_xlabel(None)
+    ax2.set_xlabel(None)
+    # hide and ax2 yaxis
+    plt.gca().axes.get_yaxis().set_visible(False)
+    # remove legend
+    ax2.get_legend().remove()
+
+    d = .015  # how big to make the diagonal lines in axes coordinates
+    # arguments to pass plot, just so we don't keep repeating them
+    kwargs = dict(transform=ax.transAxes, color='k', clip_on=False)
+    ax.plot((1 - d, 1 + d), (-d, +d), **kwargs)
+    # ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs) # top left diagonal marker
+
+    kwargs.update(transform=ax2.transAxes)  # switch to the bottom axes
+    # ax2.plot((-d, +d), (1 - d, 1 + d), **kwargs) # top right diagonal marker
+    ax2.plot((-d, +d), (-d, +d), **kwargs)
+
+    ax.set_ylabel('AUC')
+    # ax.plot([], [], ' ', label='\u03C1 = ' + "{:.2f}".format(corr) + '\np-value = ' + "{:.2f}".format(p_value))
+
+    lines_1, labels_1 = ax.get_legend_handles_labels()
+    lines_2, labels_2 = ax2.get_legend_handles_labels()
+    lines = lines_1 + lines_2
+    labels = labels_1 + labels_2
+    ax.legend(lines, labels, loc='lower left', )
+
+    fig.tight_layout()
+    Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
+    plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '.png'),
+                bbox_inches='tight', transparent=True,
+                )
+    if show:
+        plt.show()
+
+
+def plot_local_score_auc_random(ratio_df, al, df, ratio, plot_save_dir, dataset,
+                                fontsize=35, markersize=150, linewidth=4, figsize=(4.46 * 2, 6 * 2),
+                                show=False,
+                                ):
+    # Specify xlim
+    ax_xlim_low = ratio_df['local_score'].min() - 0.05 * (
+            ratio_df['local_score'].max() - ratio_df['local_score'].min())
+    ax_xlim_high = ratio_df['local_score'].max() + 0.05 * (
+            ratio_df['local_score'].max() - ratio_df['local_score'].min())
+
+    # Specify ylim
+    ax_ylim_low = 1 - (1 - ratio_df['auc'].mean()) * 3
+    ax_ylim_high = 1.0
+
+    corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
+
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111)
+    sns.regplot(ratio_df['local_score'], ratio_df['auc'], color='grey', label='Random',
+                scatter_kws={'s': markersize}, line_kws={'linewidth': linewidth * 1.5})
+    ax.set_ylim(ax_ylim_low, ax_ylim_high)
+    ax.set_xlim(ax_xlim_low, ax_xlim_high)
+    plt.locator_params(axis='y', nbins=4)
+    plt.locator_params(axis='x', nbins=2)
+    ax.locator_params(axis='x', nbins=2)
+    ax.set_xlabel(None)
+    ax.set_ylabel('AUC')
+    ax.plot([], [], ' ',
+            label='\u03C1 = ' + "{:.2f}".format(corr) + '\np-value = ' + "{:.2f}\n".format(p_value))
+    ax.legend(loc='lower right',
+              # fontsize=fontsize
+              )
+    fig.tight_layout()
+    Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
+    plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '_random_only.png'),
+                bbox_inches='tight', transparent=True,
+                )
+    if show:
+        plt.show()
+
+
+def load_info_to_df(al, checkpoint_file, dataset, df_save_dir, mean, std,
+                    rewrite_basic_df=False, rewrite_full_info_df=False):
     # Load dataset
     data_obj = Data(cfg)
     model = load_model(cfg, checkpoint_file)
@@ -603,7 +737,7 @@ if __name__ == '__main__':
         transforms.ToTensor(),
         transforms.Normalize(std=std, mean=mean),
     ])
-    if al is 'consistency':
+    if al.lower() == 'consistency':
         train_data.transform = transforms.Compose([
             transforms.RandomCrop(size=[32, 32], padding=4),
             transforms.ToTensor(),
@@ -612,50 +746,27 @@ if __name__ == '__main__':
     else:
         train_data.transform = test_data.transform
 
-    # Create df
-    if os.path.isfile(os.path.join(df_save_dir, dataset + '.pkl')):
-        full_df = pd.read_pickle(os.path.join(df_save_dir, dataset + '.pkl'))
-        full_df = full_df.dropna()  # need to dropna before experiments all done
+    # Create basic df
+    if os.path.isfile(os.path.join(df_save_dir, dataset + '.pkl')) and not rewrite_basic_df:
+        df = pd.read_pickle(os.path.join(df_save_dir, dataset + '.pkl'))
+        df = df.dropna()  # need to dropna before experiments all done
     else:
-        file_info_random, file_info_active = read_dir(DATA_DIR), read_dir_by_acquisition(DATA_DIR_ACTIVE)
+        file_info_random, file_info_active = read_dir(DATA_DIR), \
+                                             read_dir_by_acquisition(DATA_DIR_ACTIVE,
+                                                                     dataset=train_data.__class__.__name__)
         file_info = dict(list(file_info_random.items()) + list(file_info_active.items()))
-        full_df = pd.DataFrame.from_dict(file_info, orient='index')
-        full_df = full_df.astype({'auc': 'float64', 'ratio': 'float64', 'trial': 'float64'})
-        full_df.to_pickle(os.path.join(df_save_dir, dataset + '.pkl'))
-        full_df = full_df.dropna()
-    print(full_df.dtypes)
+        df = pd.DataFrame.from_dict(file_info, orient='index')
+        df = df.astype({'auc': 'float64', 'ratio': 'float64', 'trial': 'float64'})
+        df.to_pickle(os.path.join(df_save_dir, dataset + '.pkl'))
+        df = df.dropna()
+    print(df.dtypes)
 
-    # # get coreset index, for debugging
-    # budget = len(test_data)
-    # _ = get_coreset_index(cfg, data_obj, model, test_data, budget=budget)
-
-    # Calculate score
-    # calculate_score = False
-    # if calculate_score:
-    #     if al is 'coreset':
-    #         features = coreset(cfg, data_obj, model, test_data)
-    #         full_df = full_df[full_df['ratio'] <= 0.005]
-    #         full_df['local_score'] = full_df['indices'].parallel_apply(calculate_coreset_score) / len(
-    #             full_df['indices'])  # reduce score by average
-    #     else:
-    #         score = calculate_global_score(al, cfg, data_obj, model, test_data)
-    #
-    #         sns.displot(x=score)
-    #         plt.savefig(os.path.join(plot_save_dir, dataset, al + '_score.png'))
-    #
-    #         full_df['local_score'] = full_df['indices'].apply(calculate_local_score) / len(
-    #             full_df['indices'])  # reduce score by average
-
-    # df = full_df[full_df['acquisition'] == 'random']
-    df = full_df
-
-    rewrite_df = True
-    if os.path.isfile(os.path.join(df_save_dir, dataset + '_full_info.pkl')) and not rewrite_df:
+    if os.path.isfile(os.path.join(df_save_dir, dataset + '_full_info.pkl')) and not rewrite_full_info_df:
         df = pd.read_pickle(os.path.join(df_save_dir, dataset + '_full_info.pkl'))
     else:
         calculate_score = True
         if calculate_score:
-            if al is 'coreset':
+            if al.lower() == 'coreset':
                 features = coreset(cfg, data_obj, model, test_data)
                 df = df[df['ratio'] <= 0.005]
                 df['local_score'] = df['indices'].parallel_apply(calculate_coreset_score) / len(
@@ -666,9 +777,13 @@ if __name__ == '__main__':
                 sns.displot(x=score)
                 plt.savefig(os.path.join(plot_save_dir, dataset, al + '_score.png'))
 
-                df['local_score'] = df['indices'].apply(calculate_local_score) / len(df['indices'])
+                local_score = []
+                for i, indices in enumerate(tqdm(df.to_dict()['indices'].values(), desc="Calculate local score")):
+                    local_score.append(np.sum([score[index] for index in indices]))
 
-        calculate_difficulty = True
+                df['local_score'] = np.array(local_score) / len(df['indices'])
+
+        calculate_difficulty = False
         if calculate_difficulty:
             # df = df[df['ratio'] <= 0.05]  # for hard count correlation analysis
             train_dy_metrics = pd.read_json(
@@ -688,7 +803,7 @@ if __name__ == '__main__':
 
             full_label_list = [test_data[i][1] for i in range(len(test_data))]
 
-            for indice_list in tqdm(df['indices'], desc="Adding Labels"):
+            for indice_list in tqdm(df['indices']):
                 conf_list = []
                 corr_list = []
                 var_list = []
@@ -729,174 +844,319 @@ if __name__ == '__main__':
             df['labels'] = label_outer_list
         df.to_pickle(os.path.join(df_save_dir, dataset + '_full_info.pkl'))
 
-    # Plot class distribution
-    plot_distribution_histogram = False
-    if plot_distribution_histogram:
-        index_to_class_dict = train_data.info['label']
-        uniform_label = list(range(10)) * 100
-        plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
-        # ratio = 0.01  # small ratio
-        # ratio = 0.20  # small ratio for vaal only
-        ratio = 0.5  # large ratio
-        random_label = df[(df['acquisition'] == 'random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][0]
-        plot_class_dist(random_label, index_to_class_dict=index_to_class_dict, ratio=ratio)
+    return df, train_data, test_data
 
-        for acquisition in ['uncertainty', 'coreset', 'margin', 'bald', 'consistency', 'vaal']:
-            active_indices = \
-            full_df[(full_df['acquisition'] == acquisition) & (full_df['ratio'] == ratio) & (full_df['trial'] == 1)][
-                'indices']
+
+def scatter_and_multi_barplot_result(x1, y1, sd1, m1=[], lb1='random',
+                                     x2_list=[], y2_list=[], sd2_list=[], m2_list=[], lb2_list=[],
+                                     xlabel='', ylabel='', title='',
+                                     xmin=None, xmax=None, xticks=None,
+                                     ymin=0.88, ymax=1.0, yticks=[0.88, 0.92, 0.96, 1.0],
+                                     xlog=False, upper=False, alpha=0.3, legend=True,
+                                     markersize=30, elinewidth=10, linewidth=10, fontsize=120, figsize=(50, 40),
+                                     gray_color=[92 / 255, 102 / 255, 112 / 255],
+                                     red_color=[208 / 255, 53 / 255, 48 / 255],
+                                     ROOT=None,
+                                     ):
+    plt.rcParams.update({'font.size': fontsize})
+    plt.rcParams['axes.linewidth'] = linewidth
+    plt.rcParams['axes.spines.right'] = False
+    plt.rcParams['axes.spines.top'] = False
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111)
+
+    assert len(x2_list) == len(y2_list) == len(sd2_list) == len(m2_list) == len(lb2_list)
+
+    marker_list = ['v', '^', '<', '>', 's', 'd', 'p', 'P', '*', 'h', 'H', '+', 'x', 'X', 'D', '|', '_']
+
+    plt.scatter(x1, y1,
+                color=gray_color,
+                s=markersize * 30, label=lb1)
+
+    if len(x2_list) > 0:
+        for i, (x2, y2, sd2, m2, lb2) in enumerate(zip(x2_list, y2_list, sd2_list, m2_list, lb2_list)):
+            plt.errorbar(x2, y2, yerr=sd2, fmt=marker_list[i], color=red_color,
+                         markersize=markersize * 1.5,
+                         alpha=alpha,
+                         ecolor=red_color, elinewidth=elinewidth, capsize=0, label=lb2)
+
+    if len(m1) > 0 and upper:
+        plt.plot(x1, m1, color='lightgray', linewidth=linewidth)
+    if len(m2_list) > 0 and upper:
+        for i, (x2, m2) in enumerate(zip(x2_list, m2_list)):
+            plt.plot(x2, m2, color=color, linewidth=linewidth)
+
+    if legend:
+        plt.legend(loc='lower right')
+
+    if xlog:
+        ax.set_xscale('log')
+    plt.grid(axis='y', alpha=0.5, linewidth=linewidth)
+    if xlabel != '':
+        plt.xlabel(xlabel)
+    if ylabel != '':
+        plt.ylabel(ylabel)
+    if xmin is not None and xmax is not None:
+        plt.xlim(xmin, xmax)
+    plt.ylim(ymin, ymax);
+    plt.yticks(yticks)
+    if title != '':
+        plt.title(title.replace("_", " "))
+    plt.show()
+    if title != '':
+        fig.savefig(os.path.join(ROOT, 'figures', title + '_multiple_active_' + ylabel.replace(" ", "_") + '.png'),
+                    # fig.savefig(os.path.join(os.getcwd(), 'figures', title+'_multiple_active_'+ylabel.replace(" ", "_")+'.png'),
+                    bbox_inches='tight', pad_inches=0.05, dpi=200)
+
+
+def load_logs(runs=[], plist=[], suffix=None, data='mnist10', zfill=5, ROOT=None):
+    p = [str(i).zfill(zfill) for i in plist]
+    auc = np.zeros((len(runs), len(p)), dtype='float')
+    for i, run in enumerate(tqdm(runs)):
+        for j, percentage in enumerate(p):
+            try:
+                out = os.path.join(ROOT, suffix, 'logs', data + '-' + str(run) + '-p0.' + percentage + '.out')
+                text_file = open(out, 'r')
+                lines = text_file.read().split('\n')
+                auc_info = [line for line in lines if 'AVERAGE | AUC =' in line]
+                auc[i, j] = float(auc_info[0][15:])
+
+
+            except:
+                print('ERROR in {}'.format(os.path.join(suffix,
+                                                        'logs',
+                                                        data + '-' + str(run) + '-p0.' + percentage + '.out')))
+                raise
+
+    return auc
+
+
+def load_logs_by_acquisition(runs=[], plist=[],
+                             suffix=None, data='mnist10', zfill=5, ROOT=None,
+                             acquisition_function='entropy'):
+    p = [str(i).zfill(zfill) for i in plist]
+    auc = np.zeros((len(runs), len(p)), dtype='float')
+    for i, run in enumerate(tqdm(runs)):
+        for j, percentage in enumerate(p):
+            out = os.path.join(ROOT, suffix, 'logs',
+                               data + '-' + str(run) + '-p0.' + percentage + '-' + acquisition_function + '.out')
+            text_file = open(out, 'r')
+            lines = text_file.read().split('\n')
+            error_message = [line for line in lines if 'Cannot cover all classes' in line]
+            if len(error_message) > 0:
+                continue
+            auc_info = [line for line in lines if 'AVERAGE | AUC =' in line]
+            if len(auc_info) == 0:
+                print('ERROR in {}'.format(
+                    data + '-' + str(run) + '-p0.' + percentage + '-' + acquisition_function + '.out'))
+                continue
+            auc[i, j] = float(auc_info[0][15:])
+
+    return auc
+
+def plot_multiple_random_scatter_active_selection(num_run_random, num_run_active,
+                                                  num_train,
+                                                  plist,
+                                                  data='pathmnist',
+                                                  xlabel='Number of images', ylabel='AUC',
+                                                  title='',
+                                                  #                               flag_list=['uncertainty'],
+                                                  flag_list=[],
+                                                  xmin=None, xmax=None,
+                                                  xticks=None,
+                                                  ymin=0.7, ymax=1.0,
+                                                  yticks=[0.7, 0.8, 0.9, 1.0],
+                                                  alpha=0.3,
+                                                  legend=True,
+                                                  xlog=True,
+                                                  ROOT=None,
+                                                  upper=False,
+                                                  markersize=30, elinewidth=10,
+                                                  linewidth=10, fontsize=120, figsize=(50, 40),
+                                                  ):
+    random_auc = load_logs(runs=[i + 1 for i in range(num_run_random)],
+                           plist=plist,
+                           suffix=data + '_random_selection_wt_imagenet',
+                           data=data,
+                           zfill=5,
+                           ROOT=ROOT,
+                           )
+
+    active_auc_list = [load_logs_by_acquisition(runs=[i + 1 for i in range(num_run_active)],
+                                                plist=plist,
+                                                suffix=data + '_active_selection_wt_imagenet',
+                                                data=data,
+                                                zfill=5,
+                                                ROOT=ROOT,
+                                                acquisition_function=flag.lower(),
+                                                ) for flag in flag_list]
+
+    scatter_and_multi_barplot_result(
+        x1=np.tile(np.array([num_train * i / 100000.0 for i in plist]), (num_run_random, 1)),
+        y1=random_auc,
+        sd1=np.std(random_auc, axis=0),
+        m1=np.max(random_auc, axis=0),
+        lb1='Random',
+
+        x2_list=[[num_train * i / 100000.0 for i in plist]] * len(flag_list),
+        y2_list=[np.mean(active_auc, axis=0) for active_auc in active_auc_list],
+        sd2_list=[np.std(active_auc, axis=0) for active_auc in active_auc_list],
+        m2_list=[np.max(active_auc, axis=0) for active_auc in active_auc_list],
+        lb2_list=flag_list,
+
+        alpha=alpha,
+        xlog=xlog,
+        xmin=xmin, xmax=xmax, xticks=xticks,
+        ymin=ymin, ymax=ymax, yticks=yticks,
+        xlabel=xlabel,
+        ylabel=ylabel,
+        title=title,
+        legend=legend,
+        markersize=markersize,
+        elinewidth=elinewidth,
+        linewidth=linewidth,
+        fontsize=fontsize,
+        figsize=figsize,
+        ROOT=ROOT,
+        upper=upper,
+        )
+
+    return random_auc, active_auc_list
+
+
+if __name__ == '__main__':
+    # plot 1d scatter plot, active and random
+    ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
+    num_run_random, num_run_active, num_train = 20, 2, 89996
+    plist = [15, 100, 1000, 10000]
+    flag_list = ['Consistency', 'BALD', 'VAAL', 'Coreset', 'Margin', 'Uncertainty']
+    random_auc, active_auc = plot_multiple_random_scatter_active_selection(num_run_random=num_run_random,
+                                                                           num_run_active=num_run_active,
+                                                                           num_train=num_train,
+                                                                           plist=plist,
+                                                                           data='pathmnist',
+                                                                           title='PathMNIST',
+                                                                           ymin=0.65, ymax=1.0,
+                                                                           yticks=[0.7, 0.8, 0.9, 1.0],
+                                                                           xlog=True,
+                                                                           alpha=0.5,
+                                                                           flag_list=flag_list,
+                                                                           ROOT=ROOT,
+                                                                           upper=False,
+                                                                           markersize=30,
+                                                                           elinewidth=10,
+                                                                           linewidth=10,
+                                                                           fontsize=120,
+                                                                           figsize=(50, 40),
+                                                                           )
+
+    cfg.merge_from_file(argparser().parse_args().cfg_file)
+    dataset = cfg.DATASET.NAME
+
+    # Define DATA_DIR: logs dir
+    # checkpoint_file: model checkpoint
+    # plot_save_dir: dir to save plots
+    # df_save_dir: dir to save df
+    ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
+    plot_save_dir = os.path.join(ROOT, 'plot')
+    df_save_dir = os.path.join(ROOT, 'df')
+    if dataset == 'CIFAR10_REVERSE':
+        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_random_selection_wt_imagenet/logs/'
+        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_active_selection_wt_imagenet/logs/'
+        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/CIFAR10_REVERSE/resnet18/reverse_trial1/episode_0/vlBest_acc_78_model_epoch_0180.pyth'
+        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_78_model_epoch_0180.pyth')
+        mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
+    elif dataset == 'PATHMNIST_REVERSE':
+        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/pathmnist_random_selection_wt_imagenet/logs/'
+        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/pathmnist_active_selection_wt_imagenet/logs/'
+        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/PATHMNIST_REVERSE/resnet18/trial1/episode_0/vlBest_acc_94_model_epoch_0200.pyth'
+        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_94_model_epoch_0200.pyth')
+        mean, std = [.5, .5, .5], [.5, .5, .5]
+
+
+    # Active learning selection strategy
+    # for al in ['Entropy', 'BALD', 'Consistency', 'Coreset', 'Margin', 'VAAL']:
+    # for al in ['Entropy', 'BALD', 'Consistency', 'Margin', 'VAAL']:
+    for al in ['VAAL']:
+        df, train_data, test_data = load_info_to_df(al=al, dataset=dataset,
+                                                    checkpoint_file=checkpoint_file,
+                                                    df_save_dir=df_save_dir,
+                                                    mean=mean, std=std,
+                                                    rewrite_full_info_df=True,
+                                                    )
+
+        # index_to_class_dict = train_data.info['label']
+        # uniform_label = list(range(10)) * 100
+        # plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
+
+        ratios = np.sort(df['ratio'].unique())
+        # ratios = [ratios[60], ratios[-4]]
+        ratios = [0.20, 0.5, 0.6, 0.01]
+        print(len(ratios), ratios)
+
+        corr_list, p_value_list = [], []
+        print('{} \t {} \t {}'.format('ratio', 'corr', 'p_value'))
+
+        for ratio in ratios:
+            # for ratio in ratios[::-1]:
+            if al == 'Coreset' and ratio > 0.005:  # limit calculation complexity
+                continue
+            ratio_df = df[(df['ratio'] == ratio) &
+                          (df['acquisition'] == 'Random') &
+                          (df['auc'].notna())]
+
+            # corrletion of active learning method local_score
+            corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
+            corr_list.append(corr)
+            p_value_list.append(p_value)
+            print('{} \t {:.4f} \t {:.4f}'.format(ratio, corr, p_value))
+            try:
+                plot_local_score_auc_random_plus_active(ratio_df=ratio_df, al=al, df=df, ratio=ratio,
+                                                        plot_save_dir=plot_save_dir, dataset=dataset,
+                                                        # show=True,
+                                                        )
+                plot_local_score_auc_random(ratio_df=ratio_df, al=al, df=df, ratio=ratio,
+                                            plot_save_dir=plot_save_dir, dataset=dataset,
+                                            figsize=(12, 12),
+                                            )
+            except:
+                warnings.warn('{} not supported ratio!'.format(str(ratio)))
+
+        # Plot correlation summary
+        plot_correlation_summary = False
+        if plot_correlation_summary:
+            sns.lineplot(x=ratios, y=corr_list)
+            sns.lineplot(x=ratios, y=p_value_list)
+            plt.title(al)
+            plt.show()
+            plt.savefig(os.path.join(plot_save_dir, dataset, 'summary.png'))
+
+        # Print correlation summary
+        for idx, (ratio, corr, p_value) in enumerate(zip(ratios, corr_list, p_value_list)):
+            print('{} \t {:.4f} \t {:.4f}'.format(ratio, corr, p_value))
+
+            # Plot class distribution
+        plot_distribution_histogram = True
+        if plot_distribution_histogram:
+            index_to_class_dict = train_data.info['label']
+            uniform_label = list(range(10)) * 100
+            plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
+            # ratio = 0.01  # small ratio
+            # ratio = 0.20  # small ratio for vaal only
+            ratio = 0.5  # large ratio
+            random_label = df[(df['acquisition'] == 'Random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][
+                0]
+            plot_class_dist(random_label, index_to_class_dict=index_to_class_dict, ratio=ratio)
+            active_indices = df[(df['acquisition'] == al) &
+                                (df['ratio'] == ratio) &
+                                (df['trial'] == 1)]['indices']
             label_list = []
             for indices_list in active_indices:
                 label_list.append([test_data[index][1] for index in indices_list])
             active_label = label_list
-            plot_class_dist(active_label, index_to_class_dict=index_to_class_dict, acquisition=acquisition, ratio=ratio)
+            plot_class_dist(active_label, index_to_class_dict=index_to_class_dict, acquisition=al, ratio=ratio)
 
-    # Correlation analysis
-    ratios = np.sort(df['ratio'].unique())
-    corr_list, p_value_list = [], []
-    print('{} \t {} \t {}'.format('ratio', 'corr', 'p_value'))
-
-    # for ratio in ratios:
-    for ratio in ratios[::-1]:
-        if al is 'coreset' and ratio > 0.005:  # limit calculation complexity
-            continue
-        ratio_df = df[(df['ratio'] == ratio) &
-                      (df['acquisition'] == 'random') &
-                      (df['auc'].notna())]
-
-        # corrletion of active learning method local_score
-        corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
-        corr_list.append(corr)
-        p_value_list.append(p_value)
-        print('{} \t {:.4f} \t {:.4f}'.format(ratio, corr, p_value))
-
-        # Local score histogram plot
-        plot_local_score_histogram = False
-        if plot_local_score_histogram:
-            sns.displot(x=ratio_df['local_score'])
-            plt.title(al + str(ratio))
-            Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
-            plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '_histogram.png'))
-            plt.show()
-
-        # Plot local score scatter plot
-        plot_local_score = True
-        if plot_local_score:
-            fontsize = 30
-            markersize = 40
-            linewidth = 4
-            plt.rcParams.update({'font.size': fontsize})
-
-            # create scatter plot
-            active_ratio_df = df[(df['ratio'] == ratio) &
-                                 (df['acquisition'] == al) &
-                                 (df['auc'].notna())]
-
-            corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
-
-            # Specify xlim
-            ax_xlim_low = ratio_df['local_score'].min() - 0.05 * (
-                    ratio_df['local_score'].max() - ratio_df['local_score'].min())
-            ax_xlim_high = ratio_df['local_score'].max() + 0.05 * (
-                    ratio_df['local_score'].max() - ratio_df['local_score'].min())
-            ax2_xlim_low = active_ratio_df['local_score'].min() - 0.01 * (
-                    ratio_df['local_score'].max() - ratio_df['local_score'].min())
-            ax2_xlim_high = active_ratio_df['local_score'].max() + - 0.01 * (
-                    ratio_df['local_score'].max() - ratio_df['local_score'].min())
-
-            ratio_df = pd.concat([ratio_df, active_ratio_df])
-            fig = plt.figure(figsize=[20, 10])
-            ax = fig.add_subplot(121)
-            sns.regplot(ratio_df['local_score'], ratio_df['auc'], color='grey', label='random',
-                        scatter_kws={'s': markersize})
-            ax.set_ylim(None, 1)
-            ax2 = fig.add_subplot(122, sharey=ax)
-            sns.scatterplot(active_ratio_df['local_score'], active_ratio_df['auc'], color='red', label=al,
-                            s=2 * markersize)
-
-            ax.set_xlim(ax_xlim_low, ax_xlim_high)
-            ax2.set_xlim(ax2_xlim_low, ax2_xlim_high)
-
-            # To specify the number of ticks on both or any single axes
-            plt.locator_params(axis='y', nbins=4)
-            plt.locator_params(axis='x', nbins=4)
-            ax.locator_params(axis='x', nbins=4)
-
-            # hide the spines between ax and ax2
-            ax2.yaxis.tick_right()
-            ax.spines['right'].set_visible(False)
-            ax2.spines['left'].set_visible(False)
-            # ax2.spines['right'].set_visible(False)
-            ax.yaxis.tick_left()
-            # hide xlabel
-            ax.set_xlabel(None)
-            ax2.set_xlabel(None)
-            # hide and ax2 yaxis
-            plt.gca().axes.get_yaxis().set_visible(False)
-            # remove legend
-            ax2.get_legend().remove()
-
-            d = .015  # how big to make the diagonal lines in axes coordinates
-            # arguments to pass plot, just so we don't keep repeating them
-            kwargs = dict(transform=ax.transAxes, color='k', clip_on=False)
-            ax.plot((1 - d, 1 + d), (-d, +d), **kwargs)
-            ax.plot((1 - d, 1 + d), (1 - d, 1 + d), **kwargs)
-
-            kwargs.update(transform=ax2.transAxes)  # switch to the bottom axes
-            ax2.plot((-d, +d), (1 - d, 1 + d), **kwargs)
-            ax2.plot((-d, +d), (-d, +d), **kwargs)
-
-            ax.set_ylabel('AUC')
-            ax.plot([], [], ' ', label='\u03C1 = ' + "{:.2f}".format(corr) + '\np-value = ' + "{:.2f}".format(p_value))
-
-            lines_1, labels_1 = ax.get_legend_handles_labels()
-            lines_2, labels_2 = ax2.get_legend_handles_labels()
-            lines = lines_1 + lines_2
-            labels = labels_1 + labels_2
-            ax.legend(lines, labels, loc='lower left', )
-
-            fig.tight_layout()
-            Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
-            plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '.png'))
-            # plt.show()
-
-            # plot random correlation only
-            fig = plt.figure(figsize=[11.33, 15.24])
-            ax = fig.add_subplot(111)
-            sns.regplot(ratio_df['local_score'], ratio_df['auc'], color='grey', label='random',
-                        scatter_kws={'s': markersize})
-            ax.set_ylim(None, 1)
-            ax.set_xlim(ax_xlim_low, ax_xlim_high)
-            plt.locator_params(axis='y', nbins=4)
-            plt.locator_params(axis='x', nbins=4)
-            ax.locator_params(axis='x', nbins=4)
-            ax.set_xlabel(None)
-            ax.set_ylabel('AUC')
-            ax.plot([], [], ' ',
-                    label='\u03C1 = ' + "{:.2f}".format(corr) + '\np-value = ' + "{:.2f}\n".format(p_value))
-            ax.legend(loc='lower left',
-                      # fontsize=fontsize
-                      )
-            fig.tight_layout()
-            Path(os.path.join(plot_save_dir, dataset, al)).mkdir(parents=True, exist_ok=True)
-            plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '_random_only.png'))
-            # plt.show()
-
-        # Correlation
-        # sns.regplot(ratio_df['conf_count_hard']+ratio_df['conf_count_medium'], ratio_df['auc'], color='grey', label='random')
-        # plt.title(al + '_' + str(ratio) + '_' + 'hard+medium(confidence)')
-        # plt.savefig(os.path.join(plot_save_dir, dataset, al, str(ratio) + '_' + 'hard+medium(confidence)' + '.png'))
-        # plt.show()
-
-    # Plot correlation summary
-    plot_correlation_summary = False
-    if plot_correlation_summary:
-        sns.lineplot(x=ratios, y=corr_list)
-        sns.lineplot(x=ratios, y=p_value_list)
-        plt.title(al)
-        plt.show()
-        plt.savefig(os.path.join(plot_save_dir, dataset, 'summary.png'))
-
-    # Print correlation summary
-    for idx, (ratio, corr, p_value) in enumerate(zip(ratios, corr_list, p_value_list)):
-        print('{} \t {:.4f} \t {:.4f}'.format(ratio, corr, p_value))
+        # Correlation analysis
+        ratios = np.sort(df['ratio'].unique())
+        corr_list, p_value_list = [], []
+        print('{} \t {} \t {}'.format('ratio', 'corr', 'p_value'))
