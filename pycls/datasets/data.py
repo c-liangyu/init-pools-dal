@@ -240,10 +240,7 @@ class Data:
             pathmnist.labels = pathmnist.labels.squeeze()
             return pathmnist, len(pathmnist)
         elif self.dataset == 'PATHMNIST_REVERSE':
-            data_flag = 'pathmnist'
-            info = INFO[data_flag]
-            DataClass = getattr(medmnist, info['python_class'])
-            pathmnist = DataClass(split='train' if not isTrain else 'test', transform=preprocess_steps, download=isDownload)
+            pathmnist = PathMNIST(split='train' if not isTrain else 'test', transform=preprocess_steps, download=isDownload)
             pathmnist.labels = pathmnist.labels.squeeze()
             return pathmnist, len(pathmnist)
         elif self.dataset == 'BLOODMNIST':

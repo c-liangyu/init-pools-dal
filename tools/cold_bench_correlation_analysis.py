@@ -936,6 +936,7 @@ def load_logs_by_acquisition(runs=[], plist=[],
                              acquisition_function='entropy'):
     p = [str(i).zfill(zfill) for i in plist]
     auc = np.zeros((len(runs), len(p)), dtype='float')
+    acquisition_function = 'uncertainty' if acquisition_function == 'entropy' else acquisition_function
     for i, run in enumerate(tqdm(runs)):
         for j, percentage in enumerate(p):
             out = os.path.join(ROOT, suffix, 'logs',
@@ -962,6 +963,7 @@ def plot_multiple_random_scatter_active_selection(num_run_random, num_run_active
                                                   title='',
                                                   #                               flag_list=['uncertainty'],
                                                   flag_list=[],
+                                                  extend_ratio = 1.1,
                                                   xmin=None, xmax=None,
                                                   xticks=None,
                                                   ymin=0.7, ymax=1.0,
@@ -998,7 +1000,8 @@ def plot_multiple_random_scatter_active_selection(num_run_random, num_run_active
         m1=np.max(random_auc, axis=0),
         lb1='Random',
 
-        x2_list=[[num_train * i / 100000.0 for i in plist]] * len(flag_list),
+        # x2_list=[[num_train * i / 100000.0 for i in plist]] * len(flag_list),
+        x2_list=[[(num_train * i * extend_ratio) / 100000.0 for i in plist]] * len(flag_list),
         y2_list=[np.mean(active_auc, axis=0) for active_auc in active_auc_list],
         sd2_list=[np.std(active_auc, axis=0) for active_auc in active_auc_list],
         m2_list=[np.max(active_auc, axis=0) for active_auc in active_auc_list],
@@ -1029,7 +1032,7 @@ if __name__ == '__main__':
     ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
     num_run_random, num_run_active, num_train = 20, 2, 89996
     plist = [15, 100, 1000, 10000]
-    flag_list = ['Consistency', 'BALD', 'VAAL', 'Coreset', 'Margin', 'Uncertainty']
+    flag_list = ['Consistency', 'VAAL',  'Margin', 'Entropy', 'Coreset', 'BALD', ]
     random_auc, active_auc = plot_multiple_random_scatter_active_selection(num_run_random=num_run_random,
                                                                            num_run_active=num_run_active,
                                                                            num_train=num_train,

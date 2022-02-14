@@ -141,14 +141,18 @@ def main(cfg):
     
     trainSet_path, valSet_path = data_obj.makeTVSets(val_split_ratio=cfg.DATASET.VAL_RATIO, data=train_data, seed_id=cfg.RNG_SEED, save_dir=cfg.EXP_DIR)
 
-    trainSet, valSet = data_obj.loadTVPartitions(trainSetPath=trainSet_path, valSetPath=valSet_path)
+    # trainSet, valSet = data_obj.loadTVPartitions(trainSetPath=trainSet_path, valSetPath=valSet_path)
+    trainSet, valSet = np.arange(len(train_data)), np.arange(len(test_data))  # for cartography
 
     print("Data Partitioning Complete. \nTrain Set: {},  Validation Set: {}\n".format(len(trainSet), len(valSet)))
     logger.info("\nTrain Set: {},  Validation Set: {}\n".format(len(trainSet), len(valSet)))
 
     # Preparing dataloaders for initial training
+    # trainSet_loader = data_obj.getIndexesDataLoader(indexes=trainSet, batch_size=cfg.TRAIN.BATCH_SIZE, data=train_data)
     trainSet_loader = data_obj.getIndexesDataLoader(indexes=trainSet, batch_size=cfg.TRAIN.BATCH_SIZE, data=train_data)
-    valSet_loader = data_obj.getIndexesDataLoader(indexes=valSet, batch_size=cfg.TRAIN.BATCH_SIZE, data=train_data)
+    # valSet_loader = data_obj.getIndexesDataLoader(indexes=valSet, batch_size=cfg.TRAIN.BATCH_SIZE, data=train_data)
+    # valSet_loader = data_obj.getTestLoader(data=test_data, test_batch_size=cfg.TRAIN.BATCH_SIZE*16, seed_id=cfg.RNG_SEED)
+    valSet_loader = data_obj.getTestLoader(data=test_data, test_batch_size=cfg.TEST.BATCH_SIZE, seed_id=cfg.RNG_SEED)
     test_loader = data_obj.getTestLoader(data=test_data, test_batch_size=cfg.TRAIN.BATCH_SIZE, seed_id=cfg.RNG_SEED)
 
     # Initialize the model.  
@@ -343,7 +347,7 @@ def train_epoch(train_loader, model, loss_fun, optimizer, train_meter, cur_epoch
 
     len_train_loader = len(train_loader)
 
-    guid, logits, gold = [], [], []
+    guid_train, logits_train, gold_train = [], [], []
 
     for cur_iter, (index, inputs, labels) in enumerate(train_loader):
         #ensuring that inputs are floatTensor as model weights are
@@ -352,9 +356,9 @@ def train_epoch(train_loader, model, loss_fun, optimizer, train_meter, cur_epoch
         # Perform the forward pass
         preds = model(inputs)
 
-        guid.append(index)
-        logits.append(preds)
-        gold.append(labels)
+        guid_train.append(index)
+        logits_train.append(preds)
+        gold_train.append(labels)
 
         # Compute the loss
         loss = loss_fun(preds, labels)
@@ -398,14 +402,14 @@ def train_epoch(train_loader, model, loss_fun, optimizer, train_meter, cur_epoch
     train_meter.log_epoch_stats(cur_epoch)
     train_meter.reset()
 
-    guid = torch.cat(guid).detach().cpu().numpy()
-    logits = torch.cat(logits).detach().cpu().numpy()
-    gold = torch.cat(gold).detach().cpu().numpy()
+    guid_train = torch.cat(guid_train).detach().cpu().numpy()
+    logits_train = torch.cat(logits_train).detach().cpu().numpy()
+    gold_train = torch.cat(gold_train).detach().cpu().numpy()
     log_training_dynamics(output_dir=cfg.EXP_DIR,
                           epoch=cur_epoch,
-                          ids=guid,
-                          logits=logits.tolist(),
-                          golds=gold)
+                          ids=guid_train,
+                          logits=logits_train.tolist(),
+                          golds=gold_train)
     return loss, clf_iter_count
 
 
@@ -429,6 +433,8 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     misclassifications = 0.
     totalSamples = 0.
 
+    guid_test, logits_test, gold_test = [], [], []
+
     for cur_iter, (index, inputs, labels) in enumerate(test_loader):
         with torch.no_grad():
             # Transfer the data to the current GPU device
@@ -436,6 +442,11 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
             inputs = inputs.type(torch.cuda.FloatTensor)
             # Compute the predictions
             preds = model(inputs)
+
+            guid_test.append(index)
+            logits_test.append(preds)
+            gold_test.append(labels)
+
             # Compute the errors
             top1_err, top5_err = mu.topk_errors(preds, labels, [1, 5])
             # Combine the errors across the GPUs
@@ -458,6 +469,17 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     # Log epoch stats
     test_meter.log_epoch_stats(cur_epoch)
     test_meter.reset()
+
+    guid = torch.cat(guid_test).detach().cpu().numpy()
+    logits = torch.cat(logits_test).detach().cpu().numpy()
+    gold = torch.cat(gold_test).detach().cpu().numpy()
+    log_training_dynamics(output_dir=cfg.EXP_DIR,
+                          epoch=cur_epoch,
+                          ids=guid,
+                          logits=logits.tolist(),
+                          golds=gold,
+                          split='testing',
+                          )
 
     return misclassifications/totalSamples
 
