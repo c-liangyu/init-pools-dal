@@ -51,11 +51,10 @@ def plot_distribution_histogram(ratio=0.5):
         plot_class_dist(active_label, acquisition=acquisition, ratio=ratio)
 
 
-def plot_class_dist(labels, acquisition='Random', ratio=0.01, title=None, ylim=(None, None)):
+def plot_class_dist(labels, acquisition='Random', ratio=0.01, title=None, figsize=[40, 40], ylim=(None, None)):
     classes, counts = np.unique(labels, return_counts=True)
     df_rel = pd.DataFrame(columns=['classes', 'counts'])
     df_rel['classes'], df_rel['counts'] = classes, counts
-    figsize = [10, 10]
     plt.rcParams["figure.figsize"] = figsize
     plt.rcParams["figure.autolayout"] = True
     df_rel.plot(x='classes', y='counts', kind='bar', stacked=True,
@@ -470,11 +469,6 @@ def calculate_coreset_score(indices):
     return score
 
 
-def calculate_local_score(indices):
-    local_score = np.sum([score[index] for index in indices])
-    return local_score
-
-
 def get_coreset_index(cfg, dataObj, model, dataset, budget):
     clf = model.cuda()
     lSetLoader = dataObj.getSequentialDataLoader(indexes=np.arange(len(train_data)),
@@ -856,6 +850,7 @@ def scatter_and_multi_barplot_result(x1, y1, sd1, m1=[], lb1='random',
                                      gray_color=[92 / 255, 102 / 255, 112 / 255],
                                      red_color=[208 / 255, 53 / 255, 48 / 255],
                                      ROOT=None,
+                                     save_dir=None,
                                      ):
     plt.rcParams.update({'font.size': fontsize})
     plt.rcParams['axes.linewidth'] = linewidth
@@ -883,7 +878,7 @@ def scatter_and_multi_barplot_result(x1, y1, sd1, m1=[], lb1='random',
         plt.plot(x1, m1, color='lightgray', linewidth=linewidth)
     if len(m2_list) > 0 and upper:
         for i, (x2, m2) in enumerate(zip(x2_list, m2_list)):
-            plt.plot(x2, m2, color=color, linewidth=linewidth)
+            plt.plot(x2, m2, color=red_color, linewidth=linewidth)
 
     if legend:
         plt.legend(loc='lower right')
@@ -903,8 +898,7 @@ def scatter_and_multi_barplot_result(x1, y1, sd1, m1=[], lb1='random',
         plt.title(title.replace("_", " "))
     plt.show()
     if title != '':
-        fig.savefig(os.path.join(ROOT, 'figures', title + '_multiple_active_' + ylabel.replace(" ", "_") + '.png'),
-                    # fig.savefig(os.path.join(os.getcwd(), 'figures', title+'_multiple_active_'+ylabel.replace(" ", "_")+'.png'),
+        fig.savefig(os.path.join(save_dir, title+'_multiple_active_'+ylabel.replace(" ", "_")+'.png'),
                     bbox_inches='tight', pad_inches=0.05, dpi=200)
 
 
@@ -971,6 +965,7 @@ def plot_multiple_random_scatter_active_selection(num_run_random, num_run_active
                                                   legend=True,
                                                   xlog=True,
                                                   ROOT=None,
+                                                  save_dir=None,
                                                   upper=False,
                                                   markersize=30, elinewidth=10,
                                                   linewidth=10, fontsize=120, figsize=(50, 40),
@@ -1020,13 +1015,31 @@ def plot_multiple_random_scatter_active_selection(num_run_random, num_run_active
         fontsize=fontsize,
         figsize=figsize,
         ROOT=ROOT,
+        save_dir=save_dir,
         upper=upper,
         )
 
     return random_auc, active_auc_list
 
+def plot_split_class_distribution(df_dir=None, split='easy'):
+    all_indices = np.load(os.path.join(df_dir, split + '_sorted_idx.npy'))
+    # split_indices = all_indices[:len(all_indices) // 3]
+    split_indices = all_indices[:len(all_indices) // 100]
+    label_list = [test_data[index][2] for index in split_indices]
+    plot_class_dist(label_list, title=split)
+
 
 if __name__ == '__main__':
+    cfg.merge_from_file(argparser().parse_args().cfg_file)
+    dataset = cfg.DATASET.NAME
+
+    # Define DATA_DIR: logs dir
+    # checkpoint_file: model checkpoint
+    # plot_save_dir: dir to save plots
+    # df_save_dir: dir to save df
+    ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
+    plot_save_dir = os.path.join(ROOT, 'plot')
+    df_save_dir = os.path.join(ROOT, 'df')
     # plot 1d scatter plot, active and random
     ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
     num_run_random, num_run_active, num_train = 20, 2, 89996
@@ -1044,6 +1057,7 @@ if __name__ == '__main__':
                                                                            alpha=0.5,
                                                                            flag_list=flag_list,
                                                                            ROOT=ROOT,
+                                                                           save_dir=plot_save_dir,
                                                                            upper=False,
                                                                            markersize=30,
                                                                            elinewidth=10,
@@ -1052,16 +1066,6 @@ if __name__ == '__main__':
                                                                            figsize=(50, 40),
                                                                            )
 
-    cfg.merge_from_file(argparser().parse_args().cfg_file)
-    dataset = cfg.DATASET.NAME
-
-    # Define DATA_DIR: logs dir
-    # checkpoint_file: model checkpoint
-    # plot_save_dir: dir to save plots
-    # df_save_dir: dir to save df
-    ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
-    plot_save_dir = os.path.join(ROOT, 'plot')
-    df_save_dir = os.path.join(ROOT, 'df')
     if dataset == 'CIFAR10_REVERSE':
         DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_random_selection_wt_imagenet/logs/'
         DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_active_selection_wt_imagenet/logs/'
@@ -1085,13 +1089,16 @@ if __name__ == '__main__':
                                                     checkpoint_file=checkpoint_file,
                                                     df_save_dir=df_save_dir,
                                                     mean=mean, std=std,
-                                                    rewrite_full_info_df=True,
+                                                    # rewrite_full_info_df=True,
                                                     )
 
         ratios = np.sort(df['ratio'].unique())
         # ratios = [ratios[60], ratios[-4]]
         ratios = [0.20, 0.5, 0.6, 0.01]
         print(len(ratios), ratios)
+
+        for split in ['easy', 'ambiguous', 'hard']:
+            plot_split_class_distribution(df_dir=os.path.join(df_save_dir, train_data.__class__.__name__), split=split)
 
         corr_list, p_value_list = [], []
         print('{} \t {} \t {}'.format('ratio', 'corr', 'p_value'))
