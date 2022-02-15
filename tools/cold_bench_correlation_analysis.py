@@ -35,11 +35,10 @@ def argparser():
 
 # Plot class distribution (have trouble)
 def plot_distribution_histogram(ratio=0.5):
-    index_to_class_dict = train_data.info['label']
     uniform_label = list(range(10)) * 100
-    plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
+    plot_class_dist(uniform_label, ylim=(None, 200))
     random_label = df[(df['acquisition'] == 'Random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][0]
-    plot_class_dist(random_label, index_to_class_dict=index_to_class_dict, ratio=ratio)
+    plot_class_dist(random_label, ratio=ratio)
 
     for acquisition in ['uncertainty', 'coreset', 'margin', 'bald', 'consistency', 'vaal']:
         active_indices = \
@@ -49,10 +48,10 @@ def plot_distribution_histogram(ratio=0.5):
         for indices_list in active_indices:
             label_list.append([test_data[index][1] for index in indices_list])
         active_label = label_list
-        plot_class_dist(active_label, index_to_class_dict=index_to_class_dict, acquisition=acquisition, ratio=ratio)
+        plot_class_dist(active_label, acquisition=acquisition, ratio=ratio)
 
 
-def plot_class_dist(labels, index_to_class_dict, acquisition='Random', ratio=0.01, title=None, ylim=(None, None)):
+def plot_class_dist(labels, acquisition='Random', ratio=0.01, title=None, ylim=(None, None)):
     classes, counts = np.unique(labels, return_counts=True)
     df_rel = pd.DataFrame(columns=['classes', 'counts'])
     df_rel['classes'], df_rel['counts'] = classes, counts
@@ -1077,6 +1076,7 @@ if __name__ == '__main__':
         mean, std = [.5, .5, .5], [.5, .5, .5]
 
 
+
     # Active learning selection strategy
     # for al in ['Entropy', 'BALD', 'Consistency', 'Coreset', 'Margin', 'VAAL']:
     # for al in ['Entropy', 'BALD', 'Consistency', 'Margin', 'VAAL']:
@@ -1087,10 +1087,6 @@ if __name__ == '__main__':
                                                     mean=mean, std=std,
                                                     rewrite_full_info_df=True,
                                                     )
-
-        # index_to_class_dict = train_data.info['label']
-        # uniform_label = list(range(10)) * 100
-        # plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
 
         ratios = np.sort(df['ratio'].unique())
         # ratios = [ratios[60], ratios[-4]]
@@ -1141,15 +1137,14 @@ if __name__ == '__main__':
             # Plot class distribution
         plot_distribution_histogram = True
         if plot_distribution_histogram:
-            index_to_class_dict = train_data.info['label']
             uniform_label = list(range(10)) * 100
-            plot_class_dist(uniform_label, index_to_class_dict=index_to_class_dict, ylim=(None, 200))
+            plot_class_dist(uniform_label, ylim=(None, 200))
             # ratio = 0.01  # small ratio
             # ratio = 0.20  # small ratio for vaal only
             ratio = 0.5  # large ratio
             random_label = df[(df['acquisition'] == 'Random') & (df['ratio'] == ratio) & (df['trial'] == 1)]['labels'][
                 0]
-            plot_class_dist(random_label, index_to_class_dict=index_to_class_dict, ratio=ratio)
+            plot_class_dist(random_label, ratio=ratio)
             active_indices = df[(df['acquisition'] == al) &
                                 (df['ratio'] == ratio) &
                                 (df['trial'] == 1)]['indices']
@@ -1157,7 +1152,7 @@ if __name__ == '__main__':
             for indices_list in active_indices:
                 label_list.append([test_data[index][1] for index in indices_list])
             active_label = label_list
-            plot_class_dist(active_label, index_to_class_dict=index_to_class_dict, acquisition=al, ratio=ratio)
+            plot_class_dist(active_label, acquisition=al, ratio=ratio)
 
         # Correlation analysis
         ratios = np.sort(df['ratio'].unique())
