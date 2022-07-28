@@ -1,6 +1,6 @@
 # On Initial Pools for Deep Active Learning
 
-### Quick Guide for Zongwei
+### Quick Guide for Retriving Sorted Indices for Cold Start Benchmarks
 1. Install dependencies 
    
 1.1 Unsupervised-Classification/requirements.txt
