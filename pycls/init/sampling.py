@@ -65,7 +65,7 @@ class SelfSupervisionSampling:
 
         if sampling_fn == 'determined':
             file_path = f'{cfg.INIT_POOL.SIMCLR_DUPLICATE}'
-            initSet = np.load(file_path)
+            initSet = np.load(file_path)[:cfg.INIT_POOL.INIT_NUMBER]
             self.initSet = fullSet[initSet]
             self.remainSet = np.delete(fullSet, initSet)
         # Sample with class balance

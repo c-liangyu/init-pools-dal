@@ -64,7 +64,7 @@ class CoreSetMIPSampling():
         
         print(f"len(dataLoader): {len(tempIdxSetLoader)}")
 
-        for i, (x, _) in enumerate(tqdm(tempIdxSetLoader, desc="Extracting Representations")):
+        for i, (index, x, _) in enumerate(tqdm(tempIdxSetLoader, desc="Extracting Representations")):
             with torch.no_grad():
                 x = x.cuda(self.cuda_id)
                 x = x.type(torch.cuda.FloatTensor)
@@ -238,7 +238,7 @@ class Sampling:
         # else:
         tempIdxSetLoader = self.dataObj.getSequentialDataLoader(indexes=idx_set, batch_size=int(self.cfg.TRAIN.BATCH_SIZE/self.cfg.NUM_GPUS),data=dataset)
         preds = []
-        for i, (x, _) in enumerate(tqdm(tempIdxSetLoader, desc="Collecting predictions in get_predictions function")):
+        for i, (index, x, _) in enumerate(tqdm(tempIdxSetLoader, desc="Collecting predictions in get_predictions function")):
             with torch.no_grad():
                 x = x.cuda(self.cuda_id)
                 x = x.type(torch.cuda.FloatTensor)
@@ -380,7 +380,7 @@ class Sampling:
         print("len usetLoader: {}".format(len(uSetLoader)))
         temp_i=0
         
-        for k,(x_u,_) in enumerate(tqdm(uSetLoader, desc="uSet Feed Forward")):
+        for k,(index, x_u, dropped_var) in enumerate(tqdm(uSetLoader, desc="uSet Feed Forward")):
             temp_i += 1
             x_u = x_u.type(torch.cuda.FloatTensor)
             z_op = np.zeros((x_u.shape[0], self.cfg.MODEL.NUM_CLASSES), dtype=float)
@@ -440,7 +440,7 @@ class Sampling:
         temp_i=0
         var_r_scores = np.zeros((len(uSet),1), dtype=float)
         
-        for k, (x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Forward Passes through "+str(T)+" models")):
+        for k, (index, x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Forward Passes through "+str(T)+" models")):
             x_u = x_u.type(torch.cuda.FloatTensor)
             ens_preds = np.zeros((x_u.shape[0], T), dtype=float)
             for i in range(len(clf_models)):
@@ -574,7 +574,7 @@ class Sampling:
             
         n_uLoader = len(uSetLoader)
         print("len(uSetLoader): {}".format(n_uLoader))
-        for i, (x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Activations")):
+        for i, (index, x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Activations")):
             with torch.no_grad():
                 x_u = x_u.cuda(0)
 
@@ -617,7 +617,7 @@ class Sampling:
 
         n_uLoader = len(uSetLoader)
         print("len(uSetLoader): {}".format(n_uLoader))
-        for i, (x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Activations")):
+        for i, (index, x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Activations")):
             with torch.no_grad():
                 x_u = x_u.cuda(0)
 
@@ -659,7 +659,7 @@ class Sampling:
 
         n_uLoader = len(uSetLoader)
         print("len(uSetLoader): {}".format(n_uLoader))
-        for i, (x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Activations")):
+        for i, (index, x_u, _) in enumerate(tqdm(uSetLoader, desc="uSet Activations")):
             with torch.no_grad():
                 x_u = x_u.cuda(0)
 

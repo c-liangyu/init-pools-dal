@@ -11,7 +11,22 @@ import random
 
 class IMBALANCECIFAR10(torchvision.datasets.CIFAR10):
     cls_num = 10
-    np.random.seed(1)
+    np.random.seed(0)
+
+    info = {}
+    info['label'] = {
+        '0': 'airplane',
+        '1': 'automobile',
+        '2': 'bird',
+        '3': 'cat',
+        '4': 'deer',
+        '5': 'dog',
+        '6': 'frog',
+        '7': 'horse',
+        '8': 'ship',
+        '9': 'truck'
+    }
+
     def __init__(self, root, train, imbalance_ratio=0.02, imb_type='exp', transform=None):
         super(IMBALANCECIFAR10, self).__init__(root, train, transform=transform, target_transform=None, download=True)
         self.train = train

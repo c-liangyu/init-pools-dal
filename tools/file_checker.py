@@ -9,8 +9,8 @@ if __name__ == '__main__':
     # paths = ['/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/CIFAR10/resnet18/al_cifar10_random_0.2percent_start_only__deterministic_trial'+str(trial)+'/lSet.npy' for trial in range(1, 14)]
     # paths = ['/media/ntu/volume2/home/s121md302_06/workspace/code/bilevel_coresets/data_summarization/results/inds_None.npy']
     paths = [
-        '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/df/PathMNIST/coreset_sorted_idx.npy',
-        '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/df/PathMNIST/consistency_sorted_idx.npy',
+        '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/df/BloodhMNIST/coreset_sorted_idx.npy',
+        '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/df/BloodhMNIST/consistency_sorted_idx.npy',
              ]
     # path = '/home/students/dipe051-1/workspace/code/init-pools-dal/results/cifar-10/CIFAR10_SimCLR_losses.npy'
     for idx, path in enumerate(paths):

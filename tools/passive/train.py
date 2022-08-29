@@ -4,6 +4,7 @@ from datetime import datetime
 import argparse
 import numpy as np
 import pandas as pd
+from sklearn.metrics import precision_recall_fscore_support, classification_report, confusion_matrix, roc_auc_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -434,6 +435,8 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     totalSamples = 0.
 
     guid_test, logits_test, gold_test = [], [], []
+    full_labels, full_preds = [], []
+    label_dict = test_loader.dataset.info['label']
 
     for cur_iter, (index, inputs, labels) in enumerate(test_loader):
         with torch.no_grad():
@@ -446,6 +449,9 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
             guid_test.append(index)
             logits_test.append(preds)
             gold_test.append(labels)
+
+            full_labels.append(nn.functional.one_hot(labels, num_classes=len(label_dict)).cpu().detach().numpy())
+            full_preds.append(preds.cpu().detach().numpy())
 
             # Compute the errors
             top1_err, top5_err = mu.topk_errors(preds, labels, [1, 5])
@@ -470,6 +476,14 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     test_meter.log_epoch_stats(cur_epoch)
     test_meter.reset()
 
+    full_labels, full_preds = np.vstack(full_labels), np.vstack(full_preds)
+    auc = computeAUROC(full_labels, full_preds, len(label_dict))
+    logger.info("mAUC {:.2f}".format(np.mean(auc)))
+    print("mAUC {:.2f}".format(np.mean(auc)))
+    for i, class_auc in enumerate(auc):
+        logger.info("** {},{},{:.2f}".format(i, label_dict[str(i)], class_auc))
+        print("** {},{},{:.2f}".format(i, label_dict[str(i)], class_auc))
+
     guid = torch.cat(guid_test).detach().cpu().numpy()
     logits = torch.cat(logits_test).detach().cpu().numpy()
     gold = torch.cat(gold_test).detach().cpu().numpy()
@@ -482,6 +496,17 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
                           )
 
     return misclassifications/totalSamples
+
+def computeAUROC(dataGT, dataPRED, classCount):
+    outAUROC = []
+    dataGT = np.array(dataGT)
+    dataPRED = np.array(dataPRED)
+    for i in range(classCount):
+        try:
+            outAUROC.append(roc_auc_score(dataGT[:, i], dataPRED[:, i]))
+        except:
+            outAUROC.append(0.)
+    return np.array(outAUROC)
 
 
 def log_training_dynamics(output_dir,

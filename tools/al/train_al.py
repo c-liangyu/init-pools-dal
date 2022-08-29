@@ -4,7 +4,8 @@ import random
 from datetime import datetime
 import argparse
 import numpy as np
-
+import pandas as pd
+from sklearn.metrics import precision_recall_fscore_support, classification_report, confusion_matrix, roc_auc_score
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -36,6 +37,8 @@ logger = lu.get_logger(__name__)
 
 plot_episode_xvalues = []
 plot_episode_yvalues = []
+plot_episode_yvalues_auc = []
+plot_episode_yvalues_auc_class = []
 
 plot_epoch_xvalues = []
 plot_epoch_yvalues = []
@@ -48,6 +51,7 @@ def argparser():
     parser.add_argument('--cfg', dest='cfg_file', help='Config file', required=True, type=str)
     parser.add_argument('--exp-name', dest='exp_name', help='Experiment Name', required=True, type=str)
     parser.add_argument('--init', dest='init', help='Init Pool Function', required=True, type=str)
+    parser.add_argument('--init-number', dest='init_number', help='init_number_selection', default=20, type=int)
     parser.add_argument('--simclr-duplicate', dest='simclr_duplicate', help='Augmentation duplicates for SimCLR losses',
                         required=False, type=str)
     parser.add_argument('--cluster-id', dest='cluster_id', help='Pseudo labels',
@@ -266,6 +270,7 @@ def main(cfg):
 def train_model(train_loader, val_loader, model, optimizer, cfg):
     global plot_episode_xvalues
     global plot_episode_yvalues
+    global plot_episode_yvalues_auc
 
     global plot_epoch_xvalues
     global plot_epoch_yvalues
@@ -315,6 +320,8 @@ def train_model(train_loader, val_loader, model, optimizer, cfg):
         if is_eval_epoch(cur_epoch):
             # Original code[PYCLS] passes on testLoader but we want to compute on val Set
             val_set_err = test_epoch(val_loader, model, val_meter, cur_epoch)
+            if type(val_set_err) is tuple:
+                val_set_err = val_set_err[0]
             val_set_acc = 100. - val_set_err
             
             if temp_best_val_acc < val_set_acc:
@@ -383,6 +390,8 @@ def test_model(test_loader, checkpoint_file, cfg, cur_episode):
 
     global plot_episode_xvalues
     global plot_episode_yvalues
+    global plot_episode_yvalues_auc
+    global plot_episode_yvalues_auc_class
 
     global plot_epoch_xvalues
     global plot_epoch_yvalues
@@ -394,18 +403,32 @@ def test_model(test_loader, checkpoint_file, cfg, cur_episode):
 
     model = model_builder.build_model(cfg)
     model = cu.load_checkpoint(checkpoint_file, model)
-    
-    test_err = test_epoch(test_loader, model, test_meter, cur_episode)
+
+    test_err, test_auc, test_auc_class = test_epoch(test_loader, model, test_meter, cur_episode)
     test_acc = 100. - test_err
 
     plot_episode_xvalues.append(cur_episode)
     plot_episode_yvalues.append(test_acc)
+    plot_episode_yvalues_auc.append(test_auc)
+    plot_episode_yvalues_auc_class.append(test_auc_class)
 
     plot_arrays(x_vals=plot_episode_xvalues, y_vals=plot_episode_yvalues, \
         x_name="Episodes", y_name="Test Accuracy", dataset_name=cfg.DATASET.NAME, out_dir=cfg.EXP_DIR)
 
+    plot_arrays(x_vals=plot_episode_xvalues, y_vals=plot_episode_yvalues_auc, \
+        x_name="Episodes", y_name="Test AUC", dataset_name=cfg.DATASET.NAME, out_dir=cfg.EXP_DIR)
+
+    plot_arrays(x_vals=plot_episode_xvalues, y_vals=plot_episode_yvalues_auc_class, \
+                x_name="Episodes", y_name="Test AUC by class", dataset_name=cfg.DATASET.NAME, out_dir=cfg.EXP_DIR)
+
     save_plot_values([plot_episode_xvalues, plot_episode_yvalues], \
         ["plot_episode_xvalues", "plot_episode_yvalues"], out_dir=cfg.EXP_DIR)
+
+    save_plot_values([plot_episode_xvalues, plot_episode_yvalues_auc], \
+                     ["plot_episode_xvalues", "plot_episode_yvalues_auc"], out_dir=cfg.EXP_DIR)
+
+    save_plot_values([plot_episode_xvalues, plot_episode_yvalues_auc_class], \
+                     ["plot_episode_xvalues", "plot_episode_yvalues_auc_class"], out_dir=cfg.EXP_DIR)
 
     return test_acc
 
@@ -439,7 +462,7 @@ def train_epoch(train_loader, model, loss_fun, optimizer, train_meter, cur_epoch
     train_meter.iter_tic() #This basically notes the start time in timer class defined in utils/timer.py
 
     len_train_loader = len(train_loader)
-    for cur_iter, (inputs, labels) in enumerate(train_loader):
+    for cur_iter, (index, inputs, labels) in enumerate(train_loader):
         #ensuring that inputs are floatTensor as model weights are
         inputs = inputs.type(torch.cuda.FloatTensor)
         inputs, labels = inputs.cuda(), labels.cuda(non_blocking=True)
@@ -512,13 +535,25 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     misclassifications = 0.
     totalSamples = 0.
 
-    for cur_iter, (inputs, labels) in enumerate(test_loader):
+    guid_test, logits_test, gold_test = [], [], []
+    full_labels, full_preds = [], []
+    label_dict = test_loader.dataset.info['label']
+
+    for cur_iter, (index, inputs, labels) in enumerate(test_loader):
         with torch.no_grad():
             # Transfer the data to the current GPU device
             inputs, labels = inputs.cuda(), labels.cuda(non_blocking=True)
             inputs = inputs.type(torch.cuda.FloatTensor)
             # Compute the predictions
             preds = model(inputs)
+
+            guid_test.append(index)
+            logits_test.append(preds)
+            gold_test.append(labels)
+
+            full_labels.append(nn.functional.one_hot(labels, num_classes=len(label_dict)).cpu().detach().numpy())
+            full_preds.append(preds.cpu().detach().numpy())
+
             # Compute the errors
             top1_err, top5_err = mu.topk_errors(preds, labels, [1, 5])
             # Combine the errors across the GPUs
@@ -541,8 +576,27 @@ def test_epoch(test_loader, model, test_meter, cur_epoch):
     # Log epoch stats
     test_meter.log_epoch_stats(cur_epoch)
     test_meter.reset()
+    # add auc here
+    full_labels, full_preds = np.vstack(full_labels), np.vstack(full_preds)
+    auc = computeAUROC(full_labels, full_preds, len(label_dict))
+    logger.info("mAUC {:.2f}".format(np.mean(auc)))
+    print("mAUC {:.2f}".format(np.mean(auc)))
+    for i, class_auc in enumerate(auc):
+        logger.info("** {},{},{:.2f}".format(i, label_dict[str(i)], class_auc))
+        print("** {},{},{:.2f}".format(i, label_dict[str(i)], class_auc))
 
-    return misclassifications/totalSamples
+    return misclassifications/totalSamples, np.mean(auc), auc
+
+def computeAUROC(dataGT, dataPRED, classCount):
+    outAUROC = []
+    dataGT = np.array(dataGT)
+    dataPRED = np.array(dataPRED)
+    for i in range(classCount):
+        try:
+            outAUROC.append(roc_auc_score(dataGT[:, i], dataPRED[:, i]))
+        except:
+            outAUROC.append(0.)
+    return np.array(outAUROC)
 
 
 def set_random_seed(seed, deterministic=False):
@@ -568,6 +622,7 @@ if __name__ == "__main__":
     cfg.EXP_NAME = argparser().parse_args().exp_name
     cfg.INIT_POOL.SAMPLING_FN = argparser().parse_args().init
     cfg.INIT_POOL.SIMCLR_DUPLICATE = argparser().parse_args().simclr_duplicate
+    cfg.INIT_POOL.INIT_NUMBER = argparser().parse_args().init_number
     cfg.INIT_POOL.CLUSTER_ID = argparser().parse_args().cluster_id
     cfg.ACTIVE_LEARNING.SAMPLING_FN = argparser().parse_args().al
     # cfg.RNG_SEED = np.random.randint(100000)
@@ -615,7 +670,7 @@ if __name__ == "__main__":
 
         wandb.agent(sweep_id, main(cfg))
     else:
-        os.environ['WANDB_API_KEY'] = "939a8c4f5511d703276d83a706fecda173003fae"
+        # os.environ['WANDB_API_KEY'] = "939a8c4f5511d703276d83a706fecda173003fae"
         wandb.login()
         wandb.init(project="{}-init-main".format(str.lower(cfg.DATASET.NAME)), name=cfg.EXP_NAME)
 

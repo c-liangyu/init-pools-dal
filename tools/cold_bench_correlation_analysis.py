@@ -16,8 +16,10 @@ import torch
 import torch.nn as nn
 from pandarallel import pandarallel
 from scipy import spatial
+import sklearn
 from torchvision import transforms
 from tqdm import tqdm
+import mmcv
 
 import pycls.core.builders as model_builder
 import pycls.utils.checkpoint as cu
@@ -55,19 +57,24 @@ def plot_class_dist(labels, acquisition='Random', ratio=0.01, title=None, figsiz
     classes, counts = np.unique(labels, return_counts=True)
     df_rel = pd.DataFrame(columns=['classes', 'counts'])
     df_rel['classes'], df_rel['counts'] = classes, counts
+    df_rel = df_rel.sort_values('classes')
     plt.rcParams["figure.figsize"] = figsize
     plt.rcParams["figure.autolayout"] = True
-    df_rel.plot(x='classes', y='counts', kind='bar', stacked=True,
+    df_rel.plot(x='classes', y='counts', kind='barh', stacked=True,
                 title=title,
                 legend=None,
                 figsize=figsize, colormap='Reds_r',
                 xlabel=None,
                 xticks=None,
-                width=0.9
+                ylabel=None,
+                yticks=None,
+                # width=0.9
                 )
     plt.gca().axes.get_xaxis().set_visible(False)
     plt.ylim(ylim)
-    plt.savefig(os.path.join(plot_save_dir, dataset, acquisition + '_' + str(ratio) + '_distribution_histogram.png'))
+    save_path = os.path.join(plot_save_dir, dataset, acquisition + '_' + str(ratio) + '_distribution_histogram.png')
+    print(save_path)
+    plt.savefig(save_path)
     plt.show()
 
 
@@ -145,25 +152,25 @@ def load_test_data(cfg, data_obj):
     return test_data, test_size
 
 
-def calculate_global_score(al, cfg, dataObj, model, dataset):
+def calculate_global_score(al, cfg, dataObj, train_data, model, dataset, recalculate_idx=False):
     if al == 'Entropy':
-        score = entropy(cfg, dataObj=dataObj, model=model, dataset=dataset)
+        score = entropy(cfg, dataObj=dataObj, train_data=train_data, model=model, dataset=dataset, recalculate_idx=recalculate_idx)
     elif al == 'Coreset':
         raise NotImplementedError('Use coreset score calculation.')
     elif al == 'Margin':
-        score = margin(cfg, dataObj=dataObj, model=model, dataset=dataset)
+        score = margin(cfg, dataObj=dataObj, train_data=train_data, model=model, dataset=dataset, recalculate_idx=recalculate_idx)
     elif al == 'BALD':
-        score = bald(cfg, dataObj=dataObj, model=model, dataset=dataset)
+        score = bald(cfg, dataObj=dataObj, train_data=train_data, model=model, dataset=dataset, recalculate_idx=recalculate_idx)
     elif al == 'Consistency':
-        score = consistency(cfg, dataObj=dataObj, model=model, dataset=dataset)
+        score = consistency(cfg, dataObj=dataObj, train_data=train_data, model=model, dataset=dataset, recalculate_idx=recalculate_idx)
     elif al == 'VAAL':
-        score = vaal(cfg, dataObj=dataObj, model=model, dataset=dataset)
+        score = vaal(cfg, dataObj=dataObj, train_data=train_data, model=model, dataset=dataset, recalculate_idx=recalculate_idx)
     else:
         raise NotImplementedError(al)
     return score
 
 
-def entropy(cfg, dataObj, model, dataset, recalculate_idx=False):
+def entropy(cfg, dataObj, train_data, model, dataset, recalculate_idx=False):
     """
     Implements the uncertainty principle as a acquisition function.
     """
@@ -209,7 +216,7 @@ def entropy(cfg, dataObj, model, dataset, recalculate_idx=False):
     return u_ranks
 
 
-def consistency(cfg, dataObj, model, dataset, recalculate_idx=False):
+def consistency(cfg, dataObj, train_data, model, dataset, recalculate_idx=False):
     if recalculate_idx:
         # config dataloaders
         assert model.training == False, "Model expected in eval mode whereas currently it is in {}".format(
@@ -253,7 +260,7 @@ def consistency(cfg, dataObj, model, dataset, recalculate_idx=False):
     return var
 
 
-def margin(cfg, dataObj, model, dataset, recalculate_idx=False):
+def margin(cfg, dataObj, train_data, model, dataset, recalculate_idx=False):
     """
     Implements the uncertainty principle as a acquisition function.
     """
@@ -301,7 +308,7 @@ def margin(cfg, dataObj, model, dataset, recalculate_idx=False):
     return u_ranks
 
 
-def vaal(cfg, dataObj, model, dataset, recalculate_idx=False):
+def vaal(cfg, dataObj, train_data, model, dataset, recalculate_idx=False):
     if recalculate_idx:
         clf = model.cuda()
         lSetLoader = dataObj.getSequentialDataLoader(indexes=np.arange(len(train_data)),
@@ -371,7 +378,7 @@ def get_predictions(clf_model, dataObj, idx_set, dataset):
     return preds
 
 
-def bald(cfg, dataObj, model, dataset, recalculate_idx=False):
+def bald(cfg, dataObj, train_data, model, dataset, recalculate_idx=False):
     if recalculate_idx:
         "Implements BALD acquisition function where we maximize information gain."
         clf_model = model
@@ -469,7 +476,7 @@ def calculate_coreset_score(indices):
     return score
 
 
-def get_coreset_index(cfg, dataObj, model, dataset, budget):
+def get_coreset_index(cfg, dataObj, train_data, model, dataset, budget):
     clf = model.cuda()
     lSetLoader = dataObj.getSequentialDataLoader(indexes=np.arange(len(train_data)),
                                                  batch_size=int(cfg.TRAIN.BATCH_SIZE),
@@ -498,8 +505,6 @@ def get_coreset_index(cfg, dataObj, model, dataset, budget):
     start = time.time()
     greedy_indexes, remainSet = greedy_k_center(labeled=l_out, unlabeled=u_out, budget=budget)
     np.save(os.path.join(df_save_dir, dataset.__class__.__name__, 'coreset_sorted_idx.npy'), greedy_indexes)
-    return None
-
 
 def greedy_k_center(labeled, unlabeled, budget):
     greedy_indices = [None for i in range(budget)]
@@ -744,10 +749,12 @@ def load_info_to_df(al, checkpoint_file, dataset, df_save_dir, mean, std,
         df = pd.read_pickle(os.path.join(df_save_dir, dataset + '.pkl'))
         df = df.dropna()  # need to dropna before experiments all done
     else:
-        file_info_random, file_info_active = read_dir(DATA_DIR), \
-                                             read_dir_by_acquisition(DATA_DIR_ACTIVE,
-                                                                     dataset=train_data.__class__.__name__)
-        file_info = dict(list(file_info_random.items()) + list(file_info_active.items()))
+        file_info_random = read_dir(DATA_DIR)
+        if os.path.exists(DATA_DIR_ACTIVE):
+            file_info_active = read_dir_by_acquisition(DATA_DIR_ACTIVE, dataset=train_data.__class__.__name__)
+            file_info = dict(list(file_info_random.items()) + list(file_info_active.items()))
+        else:
+            file_info = file_info_random
         df = pd.DataFrame.from_dict(file_info, orient='index')
         df = df.astype({'auc': 'float64', 'ratio': 'float64', 'trial': 'float64'})
         df.to_pickle(os.path.join(df_save_dir, dataset + '.pkl'))
@@ -760,12 +767,14 @@ def load_info_to_df(al, checkpoint_file, dataset, df_save_dir, mean, std,
         calculate_score = True
         if calculate_score:
             if al.lower() == 'coreset':
+                get_coreset_index(cfg, dataObj=data_obj, train_data=train_data, model=model, dataset=test_data,
+                                          budget=len(train_data))  # debug only
                 features = coreset(cfg, data_obj, model, test_data)
                 df = df[df['ratio'] <= 0.005]
                 df['local_score'] = df['indices'].parallel_apply(calculate_coreset_score) / len(
                     df['indices'])  # reduce score by average
             else:
-                score = calculate_global_score(al, cfg, data_obj, model, test_data)
+                score = calculate_global_score(al, cfg, data_obj, train_data, model, test_data, recalculate_idx=True)
 
                 sns.displot(x=score)
                 plt.savefig(os.path.join(plot_save_dir, dataset, al + '_score.png'))
@@ -794,7 +803,7 @@ def load_info_to_df(al, checkpoint_file, dataset, df_save_dir, mean, std,
             variability_score = []
             confidence_score = []
 
-            full_label_list = [test_data[i][1] for i in range(len(test_data))]
+            full_label_list = [test_data[i][-1] for i in range(len(test_data))]
 
             for indice_list in tqdm(df['indices']):
                 conf_list = []
@@ -1025,7 +1034,7 @@ def plot_split_class_distribution(df_dir=None, split='easy'):
     all_indices = np.load(os.path.join(df_dir, split + '_sorted_idx.npy'))
     # split_indices = all_indices[:len(all_indices) // 3]
     split_indices = all_indices[:len(all_indices) // 100]
-    label_list = [test_data[index][2] for index in split_indices]
+    label_list = [test_data[index][-1] for index in split_indices]
     plot_class_dist(label_list, title=split)
 
 
@@ -1040,6 +1049,8 @@ if __name__ == '__main__':
     ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
     plot_save_dir = os.path.join(ROOT, 'plot')
     df_save_dir = os.path.join(ROOT, 'df')
+    mmcv.mkdir_or_exist(plot_save_dir)
+    mmcv.mkdir_or_exist(df_save_dir)
     # plot 1d scatter plot, active and random
     ROOT = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/'
     num_run_random, num_run_active, num_train = 20, 2, 89996
@@ -1072,61 +1083,91 @@ if __name__ == '__main__':
         # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/CIFAR10_REVERSE/resnet18/reverse_trial1/episode_0/vlBest_acc_78_model_epoch_0180.pyth'
         checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_78_model_epoch_0180.pyth')
         mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
+    elif dataset == 'IMBALANCED_CIFAR10_REVERSE':
+        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/cifar10_random_selection_wt_imagenet/logs/'
+        DATA_DIR_ACTIVE = 'None'
+        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/CIFAR10_REVERSE/resnet18/reverse_trial1/episode_0/vlBest_acc_78_model_epoch_0180.pyth'
+        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_77_model_epoch_0180.pyth')
+        mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
     elif dataset == 'PATHMNIST_REVERSE':
         DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/pathmnist_random_selection_wt_imagenet/logs/'
         DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/pathmnist_active_selection_wt_imagenet/logs/'
         # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/PATHMNIST_REVERSE/resnet18/trial1/episode_0/vlBest_acc_94_model_epoch_0200.pyth'
         checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_94_model_epoch_0200.pyth')
         mean, std = [.5, .5, .5], [.5, .5, .5]
+    elif dataset == 'DERMAMNIST_REVERSE':
+        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/dermamnist_random_selection_wt_imagenet/logs/'
+        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/dermamnist_active_selection_wt_imagenet/logs/'
+        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/PATHMNIST_REVERSE/resnet18/trial1/episode_0/vlBest_acc_94_model_epoch_0200.pyth'
+        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_94_model_epoch_0200.pyth')
+        mean, std = [.5, .5, .5], [.5, .5, .5]
+    elif dataset == 'BLOODMNIST_REVERSE':
+        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/bloodmnist_random_selection_wt_imagenet/logs/'
+        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/bloodmnist_active_selection_wt_imagenet/logs/'
+        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/PATHMNIST_REVERSE/resnet18/trial1/episode_0/vlBest_acc_94_model_epoch_0200.pyth'
+        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_93_model_epoch_0180.pyth')
+        mean, std = [.5, .5, .5], [.5, .5, .5]
+    elif dataset == 'ORGANAMNIST_REVERSE':
+        DATA_DIR = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/organamnist_random_selection_wt_imagenet/logs/logs/'
+        DATA_DIR_ACTIVE = '/media/ntu/volume2/home/s121md302_06/workspace/data/cold_bench/organamnist_active_selection_wt_imagenet/logs/'
+        # checkpoint_file = '/media/ntu/volume2/home/s121md302_06/workspace/code/init-pools-dal/output/PATHMNIST_REVERSE/resnet18/trial1/episode_0/vlBest_acc_94_model_epoch_0200.pyth'
+        checkpoint_file = os.path.join(df_save_dir, 'vlBest_acc_96_model_epoch_0040.pyth')
+        mean, std = [.5], [.5]
 
 
 
     # Active learning selection strategy
-    # for al in ['Entropy', 'BALD', 'Consistency', 'Coreset', 'Margin', 'VAAL']:
-    # for al in ['Entropy', 'BALD', 'Consistency', 'Margin', 'VAAL']:
-    for al in ['VAAL']:
+    # for al in ['Entropy', 'BALD', 'Consistency', 'Margin', 'VAAL', 'Coreset']:
+    for al in ['Coreset']:
+    # for al in ['Coreset']:
+    # for al in ['VAAL']:
         df, train_data, test_data = load_info_to_df(al=al, dataset=dataset,
                                                     checkpoint_file=checkpoint_file,
                                                     df_save_dir=df_save_dir,
                                                     mean=mean, std=std,
-                                                    # rewrite_full_info_df=True,
+                                                    rewrite_basic_df=True, rewrite_full_info_df=True
                                                     )
+
+        # continue # derma & blood debug only
 
         ratios = np.sort(df['ratio'].unique())
         # ratios = [ratios[60], ratios[-4]]
         ratios = [0.20, 0.5, 0.6, 0.01]
         print(len(ratios), ratios)
 
-        for split in ['easy', 'ambiguous', 'hard']:
-            plot_split_class_distribution(df_dir=os.path.join(df_save_dir, train_data.__class__.__name__), split=split)
+        # for split in ['easy', 'ambiguous', 'hard']:
+        #     plot_split_class_distribution(df_dir=os.path.join(df_save_dir, train_data.__class__.__name__), split=split)
 
         corr_list, p_value_list = [], []
         print('{} \t {} \t {}'.format('ratio', 'corr', 'p_value'))
 
-        for ratio in ratios:
-            # for ratio in ratios[::-1]:
-            if al == 'Coreset' and ratio > 0.005:  # limit calculation complexity
-                continue
-            ratio_df = df[(df['ratio'] == ratio) &
-                          (df['acquisition'] == 'Random') &
-                          (df['auc'].notna())]
+        # Plot correlation
+        plot_correlation = False
+        if plot_correlation:
+            for ratio in ratios:
+                # for ratio in ratios[::-1]:
+                if al == 'Coreset' and ratio > 0.005:  # limit calculation complexity
+                    continue
+                ratio_df = df[(df['ratio'] == ratio) &
+                              (df['acquisition'] == 'Random') &
+                              (df['auc'].notna())]
 
-            # corrletion of active learning method local_score
-            corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
-            corr_list.append(corr)
-            p_value_list.append(p_value)
-            print('{} \t {:.4f} \t {:.4f}'.format(ratio, corr, p_value))
-            try:
-                plot_local_score_auc_random_plus_active(ratio_df=ratio_df, al=al, df=df, ratio=ratio,
-                                                        plot_save_dir=plot_save_dir, dataset=dataset,
-                                                        # show=True,
-                                                        )
-                plot_local_score_auc_random(ratio_df=ratio_df, al=al, df=df, ratio=ratio,
-                                            plot_save_dir=plot_save_dir, dataset=dataset,
-                                            figsize=(12, 12),
-                                            )
-            except:
-                warnings.warn('{} not supported ratio!'.format(str(ratio)))
+                # corrletion of active learning method local_score
+                corr, p_value = scipy.stats.pearsonr(ratio_df['auc'], ratio_df['local_score'])
+                corr_list.append(corr)
+                p_value_list.append(p_value)
+                print('{} \t {:.4f} \t {:.4f}'.format(ratio, corr, p_value))
+                try:
+                    plot_local_score_auc_random_plus_active(ratio_df=ratio_df, al=al, df=df, ratio=ratio,
+                                                            plot_save_dir=plot_save_dir, dataset=dataset,
+                                                            # show=True,
+                                                            )
+                    plot_local_score_auc_random(ratio_df=ratio_df, al=al, df=df, ratio=ratio,
+                                                plot_save_dir=plot_save_dir, dataset=dataset,
+                                                figsize=(12, 12),
+                                                )
+                except:
+                    warnings.warn('{} not supported ratio!'.format(str(ratio)))
 
         # Plot correlation summary
         plot_correlation_summary = False
@@ -1157,9 +1198,9 @@ if __name__ == '__main__':
                                 (df['trial'] == 1)]['indices']
             label_list = []
             for indices_list in active_indices:
-                label_list.append([test_data[index][1] for index in indices_list])
+                label_list.append([test_data[index][-1] for index in indices_list])
             active_label = label_list
-            plot_class_dist(active_label, acquisition=al, ratio=ratio)
+            plot_class_dist(active_label, acquisition=al, ratio=ratio, figsize=[25.4, 57.2])
 
         # Correlation analysis
         ratios = np.sort(df['ratio'].unique())
