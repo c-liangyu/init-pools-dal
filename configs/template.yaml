@@ -19,6 +19,7 @@ MODEL:
   # 'wide_resnet50_2', 'wide_resnet101_2']
   TYPE: resnet18
   NUM_CLASSES: 10
+  INIT: random
 OPTIM:
   TYPE: 'sgd' # or 'adam'
   BASE_LR: 0.1

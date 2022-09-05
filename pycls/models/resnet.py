@@ -5,7 +5,7 @@ from torch import Tensor
 import torch.nn as nn
 from torch.utils.model_zoo import load_url as load_state_dict_from_url
 from typing import Type, Any, Callable, Union, List, Optional
-
+import os
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
@@ -24,6 +24,12 @@ model_urls = {
     'wide_resnet101_2': 'https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth',
 }
 
+simclr_model_ckts = {
+    'pathmnist': 'data/simclr_checkpoints/pathmnist/checkpoint_0200.pth.tar',
+    # 'pathmnist': 'data/runs/Sep04_15-58-39_dl3090-02/checkpoint_0005.pth.tar',
+    'organamnist': 'data/simclr_checkpoints/organamnist/checkpoint_0200.pth.tar',
+    'bloodmnist': 'data/simclr_checkpoints/bloodmnist/checkpoint_0200.pth.tar',
+}
 
 def conv3x3(in_planes: int, out_planes: int, stride: int = 1, groups: int = 1, dilation: int = 1) -> nn.Conv2d:
     """3x3 convolution with padding"""
@@ -276,11 +282,28 @@ def _resnet(
     progress: bool,
     **kwargs: Any
 ) -> ResNet:
+    if 'cfg' in kwargs:
+        cfg = kwargs['cfg']
+        del kwargs['cfg']
     model = ResNet(block, layers, **kwargs)
+    if cfg.DATASET.NAME in ['MNIST', 'MNIST_REVERSE', 'ORGANAMNIST', 'ORGANAMNIST_REVERSE']:
+        model.conv1 = torch.nn.Conv2d(1, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
+
     if pretrained:
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
         model.load_state_dict(state_dict)
+    elif cfg is not None:
+        if cfg.MODEL.INIT == 'simclr':
+            checkpoint = torch.load(os.path.join(os.path.dirname(os.getcwd()), simclr_model_ckts[cfg.DATASET.NAME.lower()]),
+                                    map_location='cuda:0' if torch.cuda.is_available() else 'cpu')
+            own_state = model.state_dict()
+            for name, param in checkpoint['state_dict'].items():
+                if name.startswith('backbone.'):
+                    if name.split('backbone.')[1] not in own_state:
+                        continue
+                    param = param.data
+                    own_state[name.split('backbone.')[1]].copy_(param)
     return model
 
 

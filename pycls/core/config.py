@@ -88,6 +88,8 @@ _C.MODEL.NUM_HIDDEN = 512
 _C.MODEL.EVAL = '' #linear or nonlinear
 _C.MODEL.NUM_OUTPUT = 10
 
+_C.MODEL.INIT = 'random'
+
 
 
 # ---------------------------------------------------------------------------- #
