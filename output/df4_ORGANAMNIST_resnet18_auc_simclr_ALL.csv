@@ -1,4 +1,8 @@
 Method,Init_Method,AL_Method,Episode,run1,run2,run3,run4,run5
+Random_Random,Random,Random,20,75.0,75.0,75.0,75.0,75.0
+Random_Random,Random,Random,30,77.0,78.0,77.0,79.0,78.0
+Random_Random,Random,Random,40,82.0,79.0,78.0,81.0,80.0
+Random_Random,Random,Random,50,84.0,80.0,81.0,83.0,82.0
 Hard-to-Contrast_Random,Hard-to-Contrast,Random,20,79.0,79.0,79.0,79.0,79.0
 Hard-to-Contrast_Random,Hard-to-Contrast,Random,30,78.0,84.0,82.0,83.0,81.0
 Hard-to-Contrast_Random,Hard-to-Contrast,Random,40,81.0,88.0,83.0,81.0,85.0
@@ -98,6 +102,10 @@ Coreset_Random,Coreset,Random,90,86.0,83.0,85.0,84.0,83.0
 Coreset_Random,Coreset,Random,100,87.0,83.0,85.0,86.0,84.0
 Coreset_Random,Coreset,Random,110,89.0,85.0,87.0,87.0,86.0
 Coreset_Random,Coreset,Random,120,89.0,85.0,87.0,86.0,86.0
+Random_Entropy,Random,Entropy,20,75.0,75.0,75.0,75.0,75.0
+Random_Entropy,Random,Entropy,30,77.0,79.0,81.0,80.0,79.0
+Random_Entropy,Random,Entropy,40,82.0,81.0,82.0,83.0,80.0
+Random_Entropy,Random,Entropy,50,83.0,82.0,83.0,85.0,82.0
 Hard-to-Contrast_Entropy,Hard-to-Contrast,Entropy,20,79.0,79.0,79.0,79.0,79.0
 Hard-to-Contrast_Entropy,Hard-to-Contrast,Entropy,30,83.0,84.0,80.0,81.0,83.0
 Hard-to-Contrast_Entropy,Hard-to-Contrast,Entropy,40,84.0,87.0,82.0,84.0,87.0
@@ -197,6 +205,10 @@ Coreset_Entropy,Coreset,Entropy,90,83.0,79.0,74.0,80.0,83.0
 Coreset_Entropy,Coreset,Entropy,100,83.0,82.0,77.0,83.0,85.0
 Coreset_Entropy,Coreset,Entropy,110,84.0,83.0,79.0,83.0,83.0
 Coreset_Entropy,Coreset,Entropy,120,81.0,85.0,79.0,86.0,86.0
+Random_Margin,Random,Margin,20,75.0,75.0,75.0,75.0,75.0
+Random_Margin,Random,Margin,30,78.0,80.0,78.0,81.0,79.0
+Random_Margin,Random,Margin,40,81.0,83.0,82.0,86.0,82.0
+Random_Margin,Random,Margin,50,83.0,84.0,85.0,87.0,85.0
 Hard-to-Contrast_Margin,Hard-to-Contrast,Margin,20,79.0,79.0,79.0,79.0,79.0
 Hard-to-Contrast_Margin,Hard-to-Contrast,Margin,30,84.0,83.0,81.0,84.0,82.0
 Hard-to-Contrast_Margin,Hard-to-Contrast,Margin,40,87.0,87.0,83.0,88.0,83.0
@@ -296,6 +308,10 @@ Coreset_Margin,Coreset,Margin,90,89.0,78.0,83.0,87.0,88.0
 Coreset_Margin,Coreset,Margin,100,89.0,83.0,83.0,90.0,89.0
 Coreset_Margin,Coreset,Margin,110,90.0,85.0,86.0,89.0,90.0
 Coreset_Margin,Coreset,Margin,120,90.0,85.0,87.0,91.0,90.0
+Random_BALD,Random,BALD,20,75.0,75.0,75.0,75.0,75.0
+Random_BALD,Random,BALD,30,77.0,76.0,79.0,78.0,79.0
+Random_BALD,Random,BALD,40,80.0,78.0,80.0,77.0,82.0
+Random_BALD,Random,BALD,50,81.0,80.0,82.0,81.0,85.0
 Hard-to-Contrast_BALD,Hard-to-Contrast,BALD,20,79.0,79.0,79.0,79.0,79.0
 Hard-to-Contrast_BALD,Hard-to-Contrast,BALD,30,81.0,82.0,79.0,78.0,82.0
 Hard-to-Contrast_BALD,Hard-to-Contrast,BALD,40,84.0,85.0,83.0,81.0,84.0
@@ -395,6 +411,10 @@ Coreset_BALD,Coreset,BALD,90,79.0,81.0,77.0,81.0,78.0
 Coreset_BALD,Coreset,BALD,100,80.0,82.0,80.0,82.0,78.0
 Coreset_BALD,Coreset,BALD,110,79.0,82.0,83.0,83.0,84.0
 Coreset_BALD,Coreset,BALD,120,81.0,87.0,83.0,82.0,85.0
+Random_Coreset,Random,Coreset,20,75.0,75.0,75.0,75.0,75.0
+Random_Coreset,Random,Coreset,30,79.0,80.0,82.0,77.0,79.0
+Random_Coreset,Random,Coreset,40,85.0,82.0,83.0,88.0,86.0
+Random_Coreset,Random,Coreset,50,90.0,83.0,88.0,89.0,88.0
 Hard-to-Contrast_Coreset,Hard-to-Contrast,Coreset,20,79.0,79.0,79.0,79.0,79.0
 Hard-to-Contrast_Coreset,Hard-to-Contrast,Coreset,30,86.0,84.0,82.0,85.0,83.0
 Hard-to-Contrast_Coreset,Hard-to-Contrast,Coreset,40,85.0,85.0,85.0,83.0,86.0
